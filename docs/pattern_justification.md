@@ -460,16 +460,8 @@ Adds lightweight routing logic (~1ms) but can save 50-80% of agent execution tim
 ## 14. Competitive Differentiator: Dynamic Agent Confidence Weighting
 
 ### Why Chosen
-Agents self-report confidence, but self-assessment can be systematically biased. The `ConfidenceCalibrator` tracks actual prediction accuracy against outcomes and adjusts influence weights per agent, creating a **self-correcting ensemble** without retraining individual agents.
-
-**Implementation details:**
-- `CalibrationRecord` stores (reported_confidence, actual_accuracy, timestamp) per observation.
-- `AgentCalibration` maintains a per-agent sliding window of records (default max 100).
-- `trust_weight` is computed as the exponential-decay weighted average of `actual / reported` ratios, clamped to [0.3, 1.5].
-- `calibrate(agent_id, raw_confidence)` multiplies raw confidence by trust_weight, clamped to [0, 1].
-- **Cold start:** returns raw confidence (no adjustment) until `min_observations` (default 3) are reached.
-- **Decay factor** (default 0.9): recent observations weigh more, creating an effective ~10-observation rolling window.
-- The GPS Engine applies calibration to the final `NextBestAction.confidence` via `calibrate("engine", raw_confidence)`.
+<!-- Phase 8: Fill in fully when implemented -->
+Agents self-report confidence, but self-assessment can be systematically biased. Dynamic weighting tracks actual prediction accuracy against outcomes and adjusts influence weights, creating a self-correcting ensemble without retraining individual agents.
 
 ### Alternatives Considered
 | Alternative | Why Rejected |
@@ -493,16 +485,40 @@ Minimal: O(n) weight update per turn where n = number of active agents. Requires
 ## 15. Azure Integration + Event-Driven Consolidation
 
 ### Why Chosen
-<!-- Phase 9: Fill in when implemented -->
+Azure provides the natural production path for a Python-based multi-agent system that needs durable storage, scalable search, and serverless event processing. The key design principle is **interface-first with local fallback**: every Azure service is accessed through an abstract interface (`MemoryStore`, `PortfolioLogger`, `RetrievalIndex`) that has both a local implementation (JSON files, TF-IDF) and an Azure implementation (Blob Storage, AI Search). This means:
+
+1. **Zero Azure dependency for development** — the full pipeline runs locally with `pip install -e .`
+2. **Config-driven switching** — changing `LN_STORAGE_BACKEND=azure_blob` swaps the entire persistence layer
+3. **Graceful degradation** — if the Azure SDK isn't installed or credentials are empty, adapters become no-op stubs rather than crashing
+
+The FastAPI server provides the standard REST interface, while Azure Functions offers serverless event-driven processing with timer triggers for periodic memory consolidation.
 
 ### Alternatives Considered
-<!-- Phase 9 -->
+| Alternative | Why Rejected |
+|---|---|
+| AWS Lambda + DynamoDB | Azure was the target cloud; DynamoDB's pricing model less favorable for learner-state read-modify-write patterns |
+| gRPC server | Heavier client requirements; REST is simpler for frontend integration and debugging |
+| Direct SDK calls without abstraction | Tight coupling to Azure, impossible to test locally without emulators, no offline development |
+| Durable Functions orchestration | Over-engineered for v1; simple timer triggers sufficient for consolidation |
+| Container Apps only (no Functions) | Misses event-driven consolidation pattern; always-on containers cost more for spiky workloads |
 
 ### Failure Modes
-<!-- Phase 9 -->
+- **Blob contention**: Multiple concurrent writes to the same learner state blob. Mitigation: download-modify-upload is acceptable for single-region; optimistic concurrency via ETags planned for v2.
+- **SDK import failure**: `azure-storage-blob` not installed. Mitigation: `_try_import()` pattern returns `False`, adapter enters stub mode, logs warning.
+- **Search index schema drift**: Index exists with different fields. Mitigation: `_ensure_index()` uses `create_or_update` semantics.
+- **Timer trigger overlap**: Consolidation handler takes longer than 6h interval. Mitigation: `is_past_due` check, per-learner error isolation.
+- **Cold start latency**: Azure Functions cold start on first request. Mitigation: lazy engine init, health endpoint for warm-up probes.
 
 ### Trust / Explainability Impact
-<!-- Phase 9 -->
+The interface abstraction preserves all observability patterns from local development — correlation IDs, debug traces, confidence scores, and pipeline step records work identically regardless of backend. Portfolio logs stored in Azure Blob maintain the same JSONL format, enabling consistent audit trails across deployments.
 
 ### Computational Tradeoffs
-<!-- Phase 9 -->
+| Aspect | Local | Azure |
+|---|---|---|
+| Storage latency | ~1ms (filesystem) | ~20-50ms (Blob REST API) |
+| Search latency | ~5ms (in-memory TF-IDF) | ~50-200ms (AI Search) |
+| Cost | Free | Pay-per-use (Functions: ~$0.20/M executions) |
+| Durability | None (local filesystem) | 99.999999999% (Blob LRS) |
+| Scale | Single process | Auto-scale to thousands of concurrent learners |
+
+The async interface uniformity means switching backends requires no code changes — only environment variables.

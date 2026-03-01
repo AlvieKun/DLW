@@ -1,0 +1,35 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "PYTHON_ISOLATE_WORKER_DEPENDENCIES": "1",
+
+    "LN_ENVIRONMENT": "local",
+    "LN_DEBUG": "true",
+    "LN_LOG_LEVEL": "DEBUG",
+    "LN_LOG_FORMAT": "console",
+
+    "LN_STORAGE_BACKEND": "local_json",
+    "LN_LOCAL_DATA_DIR": "data",
+
+    "LN_SEARCH_BACKEND": "local_tfidf",
+
+    "LN_ADAPTIVE_ROUTING_ENABLED": "true",
+    "LN_COST_BUDGET_PER_TURN": "10.0",
+
+    "_comment_azure_storage": "Uncomment below for Azure Blob Storage",
+    "_LN_STORAGE_BACKEND": "azure_blob",
+    "_LN_AZURE_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=<name>;AccountKey=<key>;EndpointSuffix=core.windows.net",
+    "_LN_AZURE_STORAGE_CONTAINER": "learning-navigator",
+
+    "_comment_azure_search": "Uncomment below for Azure AI Search",
+    "_LN_SEARCH_BACKEND": "azure_ai_search",
+    "_LN_AZURE_SEARCH_ENDPOINT": "https://<service>.search.windows.net",
+    "_LN_AZURE_SEARCH_KEY": "<admin-key>",
+    "_LN_AZURE_SEARCH_INDEX": "learning-navigator-index"
+  },
+  "Host": {
+    "CORS": "*"
+  }
+}

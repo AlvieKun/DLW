@@ -202,11 +202,34 @@ All settings can be overridden via environment variables prefixed with `LN_`:
 
 The system is designed **local-first with Azure-ready abstractions**:
 
-- **Blob Storage** → `MemoryStore` interface (portfolio logs, replay artifacts)
-- **Azure AI Search** → `RetrievalIndex` interface (RAG vector store)
-- **Azure Functions** → Event-driven memory consolidation pipeline
+- **Blob Storage** → `AzureBlobMemoryStore` + `AzureBlobPortfolioLogger` (states & portfolio in blob containers)
+- **Azure AI Search** → `AzureAISearchIndex` (full-text retrieval with auto-schema creation)
+- **Azure Functions** → HTTP triggers (`ProcessEvent`, `Health`) + timer trigger (`MemoryConsolidation` every 6h)
+- **FastAPI Server** → Full REST API with 7 endpoints (`/health`, `/api/v1/events`, learner state CRUD, portfolio, calibration)
 
-All Azure code is isolated behind interfaces in `src/learning_navigator/storage/` with local fallbacks. See `infra/azure/` for deployment scaffolding (Phase 9).
+All Azure code is isolated behind interfaces in `src/learning_navigator/storage/` with local fallbacks.
+When the Azure SDK is not installed or credentials are empty, adapters degrade gracefully to no-op stubs.
+
+### Quick Start (Local)
+
+```bash
+# Install with Azure extras
+pip install -e ".[azure]"
+
+# Run the FastAPI server
+learning-nav run --host 0.0.0.0 --port 8000
+
+# Or via uvicorn directly
+uvicorn learning_navigator.api.server:app --reload
+```
+
+### Azure Deployment
+
+See `infra/azure/` for full deployment scaffolding:
+- `main.bicep` — Infrastructure-as-Code (Function App, Storage, AI Search)
+- `deploy.ps1` — One-command deployment script
+- `Dockerfile` — Container deployment option for FastAPI
+- `host.json` / `local.settings.json.template` — Azure Functions config
 
 ---
 
@@ -329,14 +352,26 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] Engine exports: `AdaptiveRouter`, `RoutingDecision`, `ConfidenceCalibrator`, `CalibrationRecord`
 - [x] 354 passing tests
 
+### Phase 9 — Azure Deployment Scaffolding ✅
+- [x] **AzureBlobMemoryStore** — Full Azure Blob Storage adapter: container auto-creation, `states/{learner_id}.json` layout, graceful SDK-absent degradation
+- [x] **AzureBlobPortfolioLogger** — Append-only JSONL portfolio in Azure Blob: download-append-upload pattern, entry filtering, count support
+- [x] **AzureAISearchIndex** — Full Azure AI Search adapter: auto-index creation with `SearchableField`/`SimpleField` schema, OData filter building, JSON-encoded metadata
+- [x] **FastAPI REST Server** — 7 endpoints: health, process event (→ NextBestAction), learner state CRUD, portfolio queries, calibration telemetry, learner listing
+- [x] **Azure Functions Scaffold** — HTTP triggers (`ProcessEvent`, `Health`) + timer trigger (`MemoryConsolidation` every 6h), lazy engine init, graceful degradation
+- [x] **CLI `run` command** — Launches uvicorn server with configurable host/port/reload
+- [x] **Infrastructure-as-Code** — Bicep template, deployment script, Dockerfile, host.json, local.settings template
+- [x] All storage adapters degrade to no-op stubs when SDK not installed or credentials empty
+- [x] Config-driven backend selection: `LN_STORAGE_BACKEND=azure_blob`, `LN_SEARCH_BACKEND=azure_ai_search`
+- [x] 400 passing tests
+
 ---
 
 ## Known Limitations
 
 - No actual LLM integration yet — agents are rule-based / deterministic (by design for v1 local-first)
 - EventBus is in-process only (no distributed messaging)
-- Storage is local JSON files only (Azure stubs are no-ops until SDK is configured)
-- No FastAPI server yet (Phase 9+)
+- Azure adapters require SDK + credentials to function (degrade gracefully to no-ops otherwise)
+- Azure Functions consolidation is best-effort (no distributed locking)
 
 ---
 
@@ -350,5 +385,5 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] **Phase 6:** Strategic debate system
 - [x] **Phase 7:** Learner-aware RAG with grounding
 - [x] **Phase 8:** Competitive differentiators (Adaptive Routing, Confidence Weighting)
-- [ ] **Phase 9:** Azure deployment scaffolding
+- [x] **Phase 9:** Azure deployment scaffolding
 - [ ] **Phase 10:** Evaluation harness + documentation completion

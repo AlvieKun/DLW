@@ -1,0 +1,13 @@
+# Azure Functions deployment requirements
+# Pin to compatible ranges matching pyproject.toml [project.optional-dependencies.azure]
+
+# Core application
+pydantic>=2.5,<3
+pydantic-settings>=2.1,<3
+structlog>=23.2,<25
+
+# Azure SDKs
+azure-functions>=1.17,<2
+azure-storage-blob>=12.19,<13
+azure-search-documents>=11.4,<12
+azure-identity>=1.15,<2

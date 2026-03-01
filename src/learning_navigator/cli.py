@@ -33,14 +33,24 @@ def main(
 def run(
     log_level: str = typer.Option("INFO", help="Log level (DEBUG, INFO, WARNING, ERROR)"),
     log_format: str = typer.Option("console", help="Log format (json, console)"),
+    host: str = typer.Option("127.0.0.1", help="Server bind address"),
+    port: int = typer.Option(8000, help="Server port"),
+    reload: bool = typer.Option(False, help="Enable auto-reload for development"),
 ) -> None:
     """Start the Learning Navigator API server."""
+    import uvicorn
+
     settings = get_settings(log_level=log_level, log_format=log_format)
     setup_logging(log_level=settings.log_level, log_format=settings.log_format)
 
-    typer.echo(f"Starting Learning Navigator ({settings.environment.value}) ...")
-    # TODO(phase3): Launch FastAPI via uvicorn here
-    typer.echo("Server not yet implemented — see Phase 3.")
+    typer.echo(f"Starting Learning Navigator ({settings.environment.value}) on {host}:{port} ...")
+    uvicorn.run(
+        "learning_navigator.api.server:app",
+        host=host,
+        port=port,
+        reload=reload,
+        log_level=log_level.lower(),
+    )
 
 
 if __name__ == "__main__":
