@@ -26,9 +26,11 @@ from typing import Any
 import structlog
 
 from learning_navigator.agents.behavior import BehaviorAgent
+from learning_navigator.agents.decay import DecayAgent
 from learning_navigator.agents.diagnoser import DiagnoserAgent
 from learning_navigator.agents.drift_detector import DriftDetectorAgent
 from learning_navigator.agents.evaluator import EvaluatorAgent
+from learning_navigator.agents.generative_replay import GenerativeReplayAgent
 from learning_navigator.agents.motivation import MotivationAgent
 from learning_navigator.agents.planner import PlannerAgent
 from learning_navigator.agents.reflection import ReflectionAgent
@@ -83,6 +85,8 @@ class LearningGPSEngine:
         self.skill_state = SkillStateAgent()
         self.behavior = BehaviorAgent()
         self.time_optimizer = TimeOptimizerAgent()
+        self.decay = DecayAgent()
+        self.generative_replay = GenerativeReplayAgent()
         self.reflection = ReflectionAgent()
 
         # Maker-Checker: Planner makes, Evaluator checks
@@ -165,7 +169,22 @@ class LearningGPSEngine:
         })
         state = self._apply_behavior(state, behavior_response)
 
-        # 4d. Time Optimization
+        # 4d. Decay analysis (forgetting curves)
+        decay_response = await self._run_decay(state)
+        debug_trace["pipeline_steps"].append({
+            "agent": "decay",
+            "at_risk": decay_response.get("at_risk_count", 0),
+        })
+        state = self._apply_decay(state, decay_response)
+
+        # 4e. Generative Replay (synthetic exercises)
+        replay_response = await self._run_generative_replay(state, decay_response)
+        debug_trace["pipeline_steps"].append({
+            "agent": "generative_replay",
+            "exercises": replay_response.get("total_exercises", 0),
+        })
+
+        # 4f. Time Optimization
         time_response = await self._run_time_optimizer(state)
         debug_trace["pipeline_steps"].append({
             "agent": "time_optimizer",
@@ -199,7 +218,7 @@ class LearningGPSEngine:
         reflection_response = await self._run_reflection(
             state, diagnosis, drift_response, motivation_response,
             mc_result.maker_response, skill_response, behavior_response,
-            time_response,
+            time_response, decay_response, replay_response,
         )
         debug_trace["pipeline_steps"].append({
             "agent": "reflection",
@@ -331,6 +350,37 @@ class LearningGPSEngine:
         resp = await self.time_optimizer.handle(msg)
         return resp.payload
 
+    async def _run_decay(
+        self, state: LearnerState
+    ) -> dict[str, Any]:
+        """Run the decay agent (forgetting-curve analysis)."""
+        msg = MessageEnvelope(
+            message_type=MessageType.DECAY_REQUEST,
+            source_agent_id="engine",
+            target_agent_id="decay",
+            payload={
+                "learner_state": state.model_dump(mode="json"),
+            },
+        )
+        resp = await self.decay.handle(msg)
+        return resp.payload
+
+    async def _run_generative_replay(
+        self, state: LearnerState, decay_report: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Run the generative replay agent."""
+        msg = MessageEnvelope(
+            message_type=MessageType.REPLAY_REQUEST,
+            source_agent_id="engine",
+            target_agent_id="generative-replay",
+            payload={
+                "learner_state": state.model_dump(mode="json"),
+                "decay_report": decay_report,
+            },
+        )
+        resp = await self.generative_replay.handle(msg)
+        return resp.payload
+
     async def _run_reflection(
         self,
         state: LearnerState,
@@ -341,6 +391,8 @@ class LearningGPSEngine:
         skill_state_response: dict[str, Any],
         behavior_response: dict[str, Any],
         time_response: dict[str, Any],
+        decay_response: dict[str, Any] | None = None,
+        replay_response: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run the reflection agent with full pipeline context."""
         msg = MessageEnvelope(
@@ -356,6 +408,8 @@ class LearningGPSEngine:
                 "skill_state_response": skill_state_response,
                 "behavior_response": behavior_response,
                 "time_response": time_response,
+                "decay_response": decay_response or {},
+                "replay_response": replay_response or {},
             },
         )
         resp = await self.reflection.handle(msg)
@@ -565,4 +619,19 @@ class LearningGPSEngine:
                     evidence=anomaly.get("evidence", {}),
                 )
             )
+        return state
+
+    @staticmethod
+    def _apply_decay(
+        state: LearnerState, decay_response: dict[str, Any]
+    ) -> LearnerState:
+        """Apply decay analysis -- update forgetting scores on concept states."""
+        concept_reports = decay_response.get("concept_reports", {})
+        for cid, report in concept_reports.items():
+            concept = state.get_concept(cid)
+            if concept is not None:
+                new_score = report.get("forgetting_score", concept.forgetting_score)
+                state.upsert_concept(
+                    concept.model_copy(update={"forgetting_score": new_score})
+                )
         return state

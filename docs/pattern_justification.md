@@ -353,19 +353,37 @@ Auto-approve path: ~0ms (threshold comparison). Human review path: latency depen
 ## 12. Decay Agent + Generative Replay
 
 ### Why Chosen
-<!-- Phase 5: Fill in when implemented -->
+Forgetting is the silent failure mode of learning systems. Without explicit decay modelling, the system assumes knowledge persists indefinitely once acquired. The Decay Agent adds two critical capabilities:
+
+1. **Ebbinghaus decay model**: `retention(t) = exp(-t / S)` where S (stability) is computed from repetition count, spacing quality, difficulty, and mastery. This produces a per-concept forgetting score (0 = retained, 1 = forgotten).
+2. **Spaced-repetition scheduling**: From stability, compute the optimal next-review time: `t = -S * ln(target_retention)`. This tells the system exactly when to schedule review before knowledge drops below the target threshold (default 85%).
+
+The Generative Replay Agent then creates *what to practice*:
+- **Fragility-based selection**: Targets concepts with the highest `mastery * forgetting` product -- these are the most valuable to reinforce (well-learned but fading).
+- **Typed exercises**: recognition, recall, application, synthesis -- calibrated by mastery level.
+- **Interleaving**: Groups related concepts into interleaved practice sets using knowledge graph edges.
+- **Difficulty calibration**: Exercises are tuned to the zone of proximal development (slightly above current mastery).
 
 ### Alternatives Considered
-<!-- Phase 5 -->
+| Alternative | Why Rejected |
+|---|---|
+| SM-2 / Anki algorithm | Requires explicit user ratings (1-5); our system infers from quiz data |
+| FSRS (Free Spaced Repetition Scheduler) | More accurate but complex; v1 priorities are interpretability + correctness |
+| LLM-generated exercises | Would produce richer content but adds cost, latency, non-determinism; exercise *specifications* are sufficient for v1 |
+| Leitner box system | Too coarse (only 3-5 buckets); exponential decay gives continuous granularity |
+| No decay modelling | The system would re-recommend mastered concepts or ignore fading ones — both waste learner time |
 
 ### Failure Modes
-<!-- Phase 5 -->
+- **Inaccurate stability estimation**: Too few data points (new concepts) lead to unreliable stability. Mitigation: conservative base stability (24h); stability improves with more practice data.
+- **Over-review**: Stability is underestimated, causing too-frequent review. Mitigation: stability has a floor of 1 hour; scheduling uses target retention of 85%, not 95%.
+- **Replay fatigue**: Too many replay exercises frustrate learners. Mitigation: max 8 concepts per replay set; max 4 exercises per concept.
+- **Stale forgetting scores**: If the Decay Agent runs infrequently, scores become outdated. Mitigation: re-computed every pipeline tick.
 
 ### Trust / Explainability Impact
-<!-- Phase 5 -->
+The Reflection Agent's new "Memory & Retention" section surfaces at-risk concepts with their forgetting scores. The "Practice Exercises" section explains what exercises were generated and why. Teachers can see the review schedule and verify it matches pedagogical intuition. Fragility-based selection is transparent: "This concept was targeted because you learned it well but haven't practiced recently."
 
 ### Computational Tradeoffs
-<!-- Phase 5 -->
+Decay computation is O(n) per concept with math.exp() and math.log1p() calls -- negligible overhead. Stability factors are simple arithmetic (no matrix operations). Generative Replay candidate selection is O(n log n) for sorting by fragility. Interleaving uses knowledge graph adjacency lookup (O(m) where m = edges). Total: sub-millisecond for typical learner states.
 
 ---
 

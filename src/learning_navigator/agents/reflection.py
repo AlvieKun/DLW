@@ -61,6 +61,8 @@ class ReflectionAgent(BaseAgent):
         skill_state_response = message.payload.get("skill_state_response", {})
         behavior_response = message.payload.get("behavior_response", {})
         time_response = message.payload.get("time_response", {})
+        decay_response = message.payload.get("decay_response", {})
+        replay_response = message.payload.get("replay_response", {})
 
         log = logger.bind(agent=self.agent_id, learner_id=state.learner_id)
         log.info("reflection.start")
@@ -73,6 +75,8 @@ class ReflectionAgent(BaseAgent):
         sections.append(self._motivation_section(state, motivation_response))
         sections.append(self._drift_section(drift_response))
         sections.append(self._behavior_section(behavior_response))
+        sections.append(self._decay_section(decay_response))
+        sections.append(self._replay_section(replay_response))
         sections.append(self._plan_section(plan_response, time_response))
         sections.append(self._skill_graph_section(skill_state_response))
         sections.append(self._outlook_section(state))
@@ -89,7 +93,7 @@ class ReflectionAgent(BaseAgent):
         citations = self._gather_citations(
             diagnosis, drift_response, motivation_response,
             plan_response, skill_state_response, behavior_response,
-            time_response,
+            time_response, decay_response, replay_response,
         )
 
         confidence = min(1.0, 0.4 + 0.1 * len(citations))
@@ -271,6 +275,52 @@ class ReflectionAgent(BaseAgent):
         return {"title": "Knowledge Graph", "content": "\n".join(lines)}
 
     @staticmethod
+    def _decay_section(decay_response: dict[str, Any]) -> dict[str, str]:
+        """Memory decay / forgetting summary."""
+        at_risk = decay_response.get("at_risk", [])
+        summary = decay_response.get("summary", {})
+
+        if not at_risk:
+            return {"title": "Memory & Retention", "content": ""}
+
+        avg_f = summary.get("average_forgetting", 0)
+        lines = [
+            f"{len(at_risk)} concept{'s' if len(at_risk) != 1 else ''} "
+            f"at risk of being forgotten (avg forgetting {avg_f:.0%}):"
+        ]
+        for item in at_risk[:3]:
+            cid = item.get("concept_id", "?")
+            score = item.get("forgetting_score", 0)
+            lines.append(f"  - {cid} (forgetting {score:.0%})")
+
+        lines.append("Review these soon to prevent memory loss.")
+        return {"title": "Memory & Retention", "content": "\n".join(lines)}
+
+    @staticmethod
+    def _replay_section(replay_response: dict[str, Any]) -> dict[str, str]:
+        """Generative replay exercises summary."""
+        replay_plan = replay_response.get("replay_plan", [])
+        total = replay_response.get("total_exercises", 0)
+        interleaved = replay_response.get("interleaved_sets", [])
+
+        if not replay_plan:
+            return {"title": "Practice Exercises", "content": ""}
+
+        lines = [
+            f"Generated {total} practice exercise{'s' if total != 1 else ''} "
+            f"across {len(replay_plan)} concept{'s' if len(replay_plan) != 1 else ''}."
+        ]
+        for plan in replay_plan[:3]:
+            cid = plan.get("concept_id", "?")
+            n_ex = len(plan.get("exercises", []))
+            lines.append(f"  - {cid}: {n_ex} exercise{'s' if n_ex != 1 else ''}")
+
+        if interleaved:
+            lines.append(f"{len(interleaved)} interleaved set{'s' if len(interleaved) != 1 else ''} for deeper retention.")
+
+        return {"title": "Practice Exercises", "content": "\n".join(lines)}
+
+    @staticmethod
     def _outlook_section(state: LearnerState) -> dict[str, str]:
         """Forward-looking guidance."""
         avg = state.average_mastery()
@@ -302,6 +352,7 @@ class ReflectionAgent(BaseAgent):
         agent_map = [
             "diagnoser", "drift_detector", "motivation",
             "planner", "skill_state", "behavior", "time_optimizer",
+            "decay", "generative_replay",
         ]
         citations: list[str] = []
         for i, resp in enumerate(responses):

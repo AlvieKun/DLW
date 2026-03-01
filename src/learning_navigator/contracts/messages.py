@@ -50,7 +50,9 @@ class MessageType(str, Enum):
     EVALUATION_RESULT = "evaluation_result"
 
     # Continual learning
+    DECAY_REQUEST = "decay_request"
     DECAY_REPORT = "decay_report"
+    REPLAY_REQUEST = "replay_request"
     REPLAY_ARTIFACT = "replay_artifact"
 
     # RAG

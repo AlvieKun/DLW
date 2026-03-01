@@ -112,13 +112,13 @@ Learning Navigator is a **production-grade multi-agent AI system** designed to g
 | **Evaluator Agent** | ✅ Done | 6-check plan quality: prereq violation, overload, cognitive load, empty plan, time, priority | 3 |
 | **Maker–Checker** | ✅ Done | Maker→Checker loop with configurable rounds and min quality score | 3 |
 | **HITL Hooks** | ✅ Done | Pluggable human-in-the-loop review with auto-approve threshold | 3 |
-| **Learning GPS Engine** | ✅ Done | Full pipeline: Event → Diagnose → Drift → Motivate → SkillState → Behavior → TimeOpt → Plan → Check → HITL → Reflect → Action | 3-4 |
+| **Learning GPS Engine** | ✅ Done | Full pipeline: Event → Diagnose → Drift → Motivate → SkillState → Behavior → Decay → Replay → TimeOpt → Plan → Check → HITL → Reflect → Action | 3-5 |
 | **Skill State Agent** | ✅ Done | Knowledge graph analysis, prerequisite-gap detection, concept-readiness scoring, cluster analysis, learning-order suggestions | 4 |
 | **Behavior Agent** | ✅ Done | 5 anomaly types: cramming, rapid guessing, concept avoidance, irregular sessions, late-night study | 4 |
 | **Time Optimizer** | ✅ Done | Urgency x importance scoring, proportional time allocation, deadline analysis, motivation-adaptive session lengths | 4 |
 | **Reflection Agent** | ✅ Done | 8-section narrative generation: progress, session, motivation, drift, behavior, plan, knowledge graph, outlook | 4 |
-| **Decay Agent** | 🔲 Planned | Ebbinghaus forgetting + refresh scheduling | 5 |
-| **Generative Replay** | 🔲 Planned | Re-entry stories + memory consolidation | 5 |
+| **Decay Agent** | ✅ Done | Ebbinghaus forgetting curves, memory stability estimation, spaced-repetition review scheduling, at-risk concept flagging | 5 |
+| **Generative Replay** | ✅ Done | Calibrated replay exercises, retrieval practice, interleaved concept sets, difficulty calibration | 5 |
 | **Mastery Maximizer** | 🔲 Planned | Debate: maximize deep understanding | 6 |
 | **Exam Strategist** | 🔲 Planned | Debate: maximize exam performance | 6 |
 | **Burnout Minimizer** | 🔲 Planned | Debate: minimize overload risk | 6 |
@@ -284,6 +284,17 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] Behavioral anomalies applied to LearnerState
 - [x] 172 passing tests
 
+### Phase 5 — Continual Learning ✅
+- [x] **DecayAgent** — Ebbinghaus exponential decay with stability factors (repetition, spacing quality, difficulty, mastery)
+- [x] **GenerativeReplayAgent** — Calibrated replay exercises with retrieval practice, interleaving, and difficulty calibration
+- [x] Decay Agent computes per-concept forgetting scores, memory stability, review schedules, and at-risk flagging
+- [x] Generative Replay selects fragile concepts (high mastery + high forgetting), generates typed exercises, builds interleaved sets
+- [x] Engine integration: 11-agent pipeline with decay → replay → time optimization sequencing
+- [x] Reflection Agent updated with Memory & Retention and Practice Exercises sections
+- [x] Forgetting scores applied to LearnerState concept states via engine
+- [x] 4 new MessageType values (DECAY_REQUEST, DECAY_REPORT, REPLAY_REQUEST, REPLAY_ARTIFACT)
+- [x] 202 passing tests
+
 ---
 
 ## Known Limitations
@@ -292,7 +303,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - EventBus is in-process only (no distributed messaging)
 - Storage is local JSON files only (Azure stubs are no-ops until SDK is configured)
 - Pipeline ordering is static (adaptive routing in Phase 8)
-- No FastAPI server yet (Phase 5+)
+- No FastAPI server yet (Phase 6+)
 - RAG subsystem not yet implemented (Phase 7)
 
 ---
@@ -303,7 +314,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] **Phase 2:** Learner state core + storage abstractions
 - [x] **Phase 3:** Core agents v1 + Maker-Checker + HITL + GPS Engine orchestrator
 - [x] **Phase 4:** Specialized agents (Skill State, Behavior, Time Optimizer, Reflection)
-- [ ] **Phase 5:** Continual learning (Decay Agent, Generative Replay)
+- [x] **Phase 5:** Continual learning (Decay Agent, Generative Replay)
 - [ ] **Phase 6:** Strategic debate system
 - [ ] **Phase 7:** Learner-aware RAG with grounding
 - [ ] **Phase 8:** Competitive differentiators (Adaptive Routing, Confidence Weighting)
