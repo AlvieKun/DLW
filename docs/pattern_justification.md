@@ -54,19 +54,35 @@ In-process async dispatch is near-zero overhead. The cost is no built-in durabil
 ## 2. Learner State Model + Uncertainty
 
 ### Why Chosen
-<!-- Phase 2: Fill in when implemented -->
+A unified `LearnerState` object that serves as the single source of truth for all agents. This avoids scattered state, ensures consistency, and makes it possible to serialize/persist/audit the complete learner picture at any point.
+
+Key design choices:
+- **BKT (Bayesian Knowledge Tracing)** for per-concept mastery: well-validated in educational research, interpretable probabilities, and supports principled uncertainty via binary entropy.
+- **Entropy-based uncertainty**: at `p_know=0.5` uncertainty is maximal (1.0), at extremes it's zero. This drives adaptive routing — high uncertainty triggers more agents.
+- **Knowledge graph as adjacency list**: captures prerequisite/corequisite/extends/related relationships without requiring a full graph DB. Sufficient for concept traversal (e.g., "what should I review before calculus?").
+- **Motivation as a separate tracked signal** with level, score, trend, and confidence — not conflated with mastery.
+- **Forgetting score** per concept (separate from mastery) — a dedicated field updated by the Decay Agent, enabling spaced-repetition scheduling.
+- **Time budget constraints** as first-class data — the Time Optimizer needs this to produce feasible plans.
 
 ### Alternatives Considered
-<!-- Phase 2 -->
+| Alternative | Why Rejected |
+|---|---|
+| Simple mastery percentage | No uncertainty, no principled update rule, no basis for confidence scoring |
+| Deep Knowledge Tracing (DKT) | Requires training data + GPU; opaque; poor interpretability; overkill for v1 |
+| Item Response Theory (IRT) | Better for test design than ongoing tracking; doesn't model learning transitions |
+| External graph DB (Neo4j) | Operational complexity; adjacency list sufficient for thousands of concepts |
+| Flat session history only | No generalization across concepts; can't do prerequisite reasoning |
 
 ### Failure Modes
-<!-- Phase 2 -->
+- **BKT parameter miscalibration**: If `p_slip`, `p_guess`, `p_transit` are wrong, mastery estimates drift. Mitigation: allow per-concept parameter overrides; cohort meta-learning (Differentiator D5) can improve priors.
+- **Stale state**: If events are missed or delayed, state diverges from reality. Mitigation: inactivity detection triggers Decay Agent + Generative Replay.
+- **Knowledge graph incompleteness**: Missing prerequisite edges cause bad recommendations. Mitigation: graph is editable by teachers (HITL); Reflection Agent flags when recommendations skip prerequisites.
 
 ### Trust / Explainability Impact
-<!-- Phase 2 -->
+All state is inspectable and serializable as JSON. The Reflection Agent generates natural-language summaries from this state. Teachers can view BKT parameters and override them (HITL hooks). Uncertainty is explicit, not hidden — it drives system behavior and is surfaced in explanations.
 
 ### Computational Tradeoffs
-<!-- Phase 2 -->
+BKT update is O(1) per observation — negligible. State serialization is O(n) where n = concept count, typically ~100-1000. JSON storage is acceptable for single-user; for cohorts, the Azure Blob adapter scales horizontally.
 
 ---
 

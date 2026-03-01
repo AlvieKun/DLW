@@ -127,7 +127,7 @@ Learning Navigator is a **production-grade multi-agent AI system** designed to g
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.10+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
 ### Install
@@ -242,13 +242,28 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] CLI entry point
 - [x] Test suite (contracts, event bus, config, agent interface)
 
+### Phase 2 — Learner State Core + Storage ✅
+- [x] `LearnerState` domain model with full uncertainty tracking
+- [x] `BKTParams` — Bayesian Knowledge Tracing with posterior update + entropy-based uncertainty
+- [x] `ConceptState` with mastery, forgetting score, difficulty, spacing history
+- [x] Knowledge graph (adjacency list: prerequisite, corequisite, extends, related edges)
+- [x] Motivation state with level, score, trend, confidence
+- [x] Drift signals + behavioral anomaly flags
+- [x] Time budget constraints (weekly hours, session length, deadlines, priorities)
+- [x] `MemoryStore` interface + `LocalJsonMemoryStore` (JSON-on-disk)
+- [x] `PortfolioLogger` interface + `LocalJsonPortfolioLogger` (JSONL append-only)
+- [x] `RetrievalIndex` interface (RAG store abstraction)
+- [x] Azure Blob Storage stub adapters (`AzureBlobMemoryStore`, `AzureBlobPortfolioLogger`)
+- [x] Storage factory functions with config-driven backend selection
+- [x] 78 passing tests
+
 ---
 
 ## Known Limitations
 
 - No actual LLM integration yet — agents are rule-based / stubbed (by design for v1 local-first)
 - EventBus is in-process only (no distributed messaging)
-- No persistence layer yet (Phase 2)
+- Storage is local JSON files only (Azure stubs are no-ops until SDK is configured)
 - No FastAPI server yet (Phase 3)
 - RAG subsystem not yet implemented (Phase 7)
 
@@ -257,7 +272,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 ## Roadmap / TODO
 
 - [x] **Phase 1:** Repo bootstrap + architecture skeleton
-- [ ] **Phase 2:** Learner state core + storage abstractions
+- [x] **Phase 2:** Learner state core + storage abstractions
 - [ ] **Phase 3:** Core agents v1 (Diagnoser, Drift, Motivation, Planner, Evaluator, Maker-Checker)
 - [ ] **Phase 4:** Specialized agents (Skill State, Behavior, Time Optimizer, Reflection)
 - [ ] **Phase 5:** Continual learning (Decay Agent, Generative Replay)
