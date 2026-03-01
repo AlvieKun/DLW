@@ -112,16 +112,17 @@ Learning Navigator is a **production-grade multi-agent AI system** designed to g
 | **Evaluator Agent** | ✅ Done | 6-check plan quality: prereq violation, overload, cognitive load, empty plan, time, priority | 3 |
 | **Maker–Checker** | ✅ Done | Maker→Checker loop with configurable rounds and min quality score | 3 |
 | **HITL Hooks** | ✅ Done | Pluggable human-in-the-loop review with auto-approve threshold | 3 |
-| **Learning GPS Engine** | ✅ Done | Full pipeline: Event → Diagnose → Drift → Motivate → SkillState → Behavior → Decay → Replay → TimeOpt → Plan → Check → HITL → Reflect → Action | 3-5 |
+| **Learning GPS Engine** | ✅ Done | Full pipeline: Event → Diagnose → Drift → Motivate → SkillState → Behavior → Decay → Replay → TimeOpt → Plan → Check → Debate → HITL → Reflect → Action | 3-6 |
 | **Skill State Agent** | ✅ Done | Knowledge graph analysis, prerequisite-gap detection, concept-readiness scoring, cluster analysis, learning-order suggestions | 4 |
 | **Behavior Agent** | ✅ Done | 5 anomaly types: cramming, rapid guessing, concept avoidance, irregular sessions, late-night study | 4 |
 | **Time Optimizer** | ✅ Done | Urgency x importance scoring, proportional time allocation, deadline analysis, motivation-adaptive session lengths | 4 |
-| **Reflection Agent** | ✅ Done | 8-section narrative generation: progress, session, motivation, drift, behavior, plan, knowledge graph, outlook | 4 |
+| **Reflection Agent** | ✅ Done | 10-section narrative generation: progress, session, motivation, drift, behavior, decay, exercises, plan, knowledge graph, debate, outlook | 4-6 |
 | **Decay Agent** | ✅ Done | Ebbinghaus forgetting curves, memory stability estimation, spaced-repetition review scheduling, at-risk concept flagging | 5 |
 | **Generative Replay** | ✅ Done | Calibrated replay exercises, retrieval practice, interleaved concept sets, difficulty calibration | 5 |
-| **Mastery Maximizer** | 🔲 Planned | Debate: maximize deep understanding | 6 |
-| **Exam Strategist** | 🔲 Planned | Debate: maximize exam performance | 6 |
-| **Burnout Minimizer** | 🔲 Planned | Debate: minimize overload risk | 6 |
+| **Mastery Maximizer** | ✅ Done | Debate: prerequisite violations, depth checks, forgetting-gap detection, topic-count analysis | 6 |
+| **Exam Strategist** | ✅ Done | Debate: priority-concept coverage, deadline pressure, maintenance ratio, practice-test suggestions | 6 |
+| **Burnout Minimizer** | ✅ Done | Debate: session-length caps, cognitive overload, new-content ratio, stress signals, motivation trend | 6 |
+| **Debate Arbitrator** | ✅ Done | Contextual perspective weighting (deadline/motivation/anomaly-aware), objection scoring, amendment acceptance | 6 |
 
 ---
 
@@ -295,6 +296,16 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] 4 new MessageType values (DECAY_REQUEST, DECAY_REPORT, REPLAY_REQUEST, REPLAY_ARTIFACT)
 - [x] 202 passing tests
 
+### Phase 6 — Strategic Debate System ✅
+- [x] **MasteryMaximizer** — Advocate for deep understanding: prerequisite violation detection, depth checks (min session time), forgetting-gap detection, topic-count analysis
+- [x] **ExamStrategist** — Advocate for exam performance: priority-concept coverage enforcement, deadline-pressure analysis, maintenance-ratio limits, practice-test suggestions
+- [x] **BurnoutMinimizer** — Advocate for sustainable engagement: motivation-based session caps, cognitive overload detection (hard-concept limits), new-content ratio, stress signal awareness, motivation trend analysis
+- [x] **DebateArbitrator** — Resolves strategic disagreements: contextual perspective weighting (deadline→exam, low motivation→burnout, cramming→burnout), normalised weights, severity-based objection filtering, amendment acceptance
+- [x] **DebateEngine subsystem** — Full debate orchestration: fan-out to 3 advocates → collect critiques → alignment check → arbitrate → DebateResult; configurable rounds, early-exit on alignment
+- [x] GPS Engine integration: debate step between Maker-Checker and HITL (15-agent pipeline)
+- [x] Reflection Agent updated with Strategic Debate section (10 narrative sections total)
+- [x] 248 passing tests
+
 ---
 
 ## Known Limitations
@@ -303,7 +314,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - EventBus is in-process only (no distributed messaging)
 - Storage is local JSON files only (Azure stubs are no-ops until SDK is configured)
 - Pipeline ordering is static (adaptive routing in Phase 8)
-- No FastAPI server yet (Phase 6+)
+- No FastAPI server yet (Phase 7+)
 - RAG subsystem not yet implemented (Phase 7)
 
 ---
@@ -315,7 +326,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] **Phase 3:** Core agents v1 + Maker-Checker + HITL + GPS Engine orchestrator
 - [x] **Phase 4:** Specialized agents (Skill State, Behavior, Time Optimizer, Reflection)
 - [x] **Phase 5:** Continual learning (Decay Agent, Generative Replay)
-- [ ] **Phase 6:** Strategic debate system
+- [x] **Phase 6:** Strategic debate system
 - [ ] **Phase 7:** Learner-aware RAG with grounding
 - [ ] **Phase 8:** Competitive differentiators (Adaptive Routing, Confidence Weighting)
 - [ ] **Phase 9:** Azure deployment scaffolding

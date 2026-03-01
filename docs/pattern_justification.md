@@ -122,19 +122,35 @@ All agents are O(n) where n = number of concepts in the learner's state (typical
 ## 4. Debate Subsystem
 
 ### Why Chosen
-<!-- Phase 6: Fill in when implemented -->
+Learning plans involve inherent *strategic tradeoffs* that a single planning agent cannot resolve — should the learner spend time on depth vs breadth? Pursue exam-critical topics or shore up foundations? Push through hard content or protect against burnout? The strategic debate system resolves these tensions through a structured three-advocate + arbitrator architecture:
+
+1. **Mastery Maximizer** — advocates for deep, durable understanding (prerequisite coverage, sufficient session depth, spaced repetition for at-risk concepts).
+2. **Exam Strategist** — advocates for assessment-optimal study (priority coverage, deadline awareness, practice tests, avoiding over-maintenance).
+3. **Burnout Minimizer** — advocates for sustainable engagement (session length caps by motivation level, cognitive load limits, stress-signal awareness).
+4. **Debate Arbitrator** — resolves disagreements via contextually-weighted scoring. Weights shift based on learner state: near-deadline → exam weight increases; low motivation → burnout weight increases; cramming behaviours → burnout weight increases. All weights normalise to 1.0.
+
+The **DebateEngine** orchestrates the loop: plan → fan-out to 3 advocates → collect critiques (with alignment scores) → if all aligned (≥0.85), approve immediately → otherwise arbitrate → if major revision and rounds remain, loop.
 
 ### Alternatives Considered
-<!-- Phase 6 -->
+| Alternative | Why Rejected |
+|---|---|
+| Single "balanced" planning agent | Collapses competing objectives into one opaque function; no transparency about *which* perspective dominated |
+| Majority vote among agents | Doesn't weight perspectives contextually; burnout concerns ignored 2-to-1 even when learner is critical |
+| LLM-based debate (multi-turn prompting) | Expensive, non-deterministic, slow; rule-based debate is sufficient for known tradeoff dimensions |
+| User selects priority manually | Adds friction; learner often doesn't know optimal strategy; system should adapt automatically |
+| Two-agent debate (mastery vs exam) | Misses the crucial third axis (wellbeing/burnout); learner welfare is a first-class concern |
 
 ### Failure Modes
-<!-- Phase 6 -->
+- **All advocates always object**: Possible if plan is genuinely bad. Mitigation: Arbitrator's severity threshold filters low-weighted objections; only objections above `weighted_severity ≥ 0.3` are accepted.
+- **Deadweight advocate**: An advocate with no relevant objections still runs. Mitigation: Aligned advocates (alignment ≥ 0.85) trigger early exit with no arbitration cost.
+- **Arbitrator bias toward one perspective**: If weight adjustments are too aggressive, one perspective always dominates. Mitigation: Weights are normalised and base weights are configurable via constructor injection.
+- **Infinite revision loop**: Major revision re-invokes debate. Mitigation: Hard cap on `max_debate_rounds` (default 2).
 
 ### Trust / Explainability Impact
-<!-- Phase 6 -->
+The Reflection Agent now includes a "Strategic Debate" section in its narrative, reporting the debate outcome, perspective weights, and amendment count. Learners (and teachers via HITL) can see *which strategic perspective shaped the final plan* and why. This transparency is a significant differentiator over black-box planners.
 
 ### Computational Tradeoffs
-<!-- Phase 6 -->
+The debate adds 4 agent invocations per plan (3 advocates + 1 arbitrator), all rule-based and sub-millisecond each. Total overhead: ~1-5ms per pipeline tick. With `debate_enabled=False`, overhead is zero (early return). When all advocates align, arbitrator is skipped entirely. Maximum cost: `max_debate_rounds × 4` agent calls = 8 with default settings.
 
 ---
 

@@ -2,6 +2,12 @@
 
 from learning_navigator.agents.base import BaseAgent
 from learning_navigator.agents.behavior import BehaviorAgent
+from learning_navigator.agents.debate_advocates import (
+    BurnoutMinimizer,
+    ExamStrategist,
+    MasteryMaximizer,
+)
+from learning_navigator.agents.debate_arbitrator import DebateArbitrator
 from learning_navigator.agents.decay import DecayAgent
 from learning_navigator.agents.diagnoser import DiagnoserAgent
 from learning_navigator.agents.drift_detector import DriftDetectorAgent
@@ -16,11 +22,15 @@ from learning_navigator.agents.time_optimizer import TimeOptimizerAgent
 __all__ = [
     "BaseAgent",
     "BehaviorAgent",
+    "BurnoutMinimizer",
+    "DebateArbitrator",
     "DecayAgent",
     "DiagnoserAgent",
     "DriftDetectorAgent",
     "EvaluatorAgent",
+    "ExamStrategist",
     "GenerativeReplayAgent",
+    "MasteryMaximizer",
     "MotivationAgent",
     "PlannerAgent",
     "ReflectionAgent",

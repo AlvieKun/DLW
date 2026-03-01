@@ -63,6 +63,7 @@ class ReflectionAgent(BaseAgent):
         time_response = message.payload.get("time_response", {})
         decay_response = message.payload.get("decay_response", {})
         replay_response = message.payload.get("replay_response", {})
+        debate_response = message.payload.get("debate_response", {})
 
         log = logger.bind(agent=self.agent_id, learner_id=state.learner_id)
         log.info("reflection.start")
@@ -79,6 +80,7 @@ class ReflectionAgent(BaseAgent):
         sections.append(self._replay_section(replay_response))
         sections.append(self._plan_section(plan_response, time_response))
         sections.append(self._skill_graph_section(skill_state_response))
+        sections.append(self._debate_section(debate_response))
         sections.append(self._outlook_section(state))
 
         # Filter empty sections
@@ -319,6 +321,39 @@ class ReflectionAgent(BaseAgent):
             lines.append(f"{len(interleaved)} interleaved set{'s' if len(interleaved) != 1 else ''} for deeper retention.")
 
         return {"title": "Practice Exercises", "content": "\n".join(lines)}
+
+    @staticmethod
+    def _debate_section(debate_response: dict[str, Any]) -> dict[str, str]:
+        """Strategic debate summary."""
+        if not debate_response:
+            return {"title": "Strategic Debate", "content": ""}
+
+        outcome = debate_response.get("outcome", "debate_skipped")
+        if outcome == "debate_skipped":
+            return {"title": "Strategic Debate", "content": ""}
+
+        lines: list[str] = []
+        rounds = debate_response.get("rounds_used", 0)
+        alignment = debate_response.get("overall_alignment", 1.0)
+        amendments = debate_response.get("accepted_amendments", [])
+        weights = debate_response.get("perspective_weights", {})
+
+        outcome_labels = {
+            "plan_approved": "Plan approved by all perspectives",
+            "minor_revision": "Minor revisions accepted",
+            "major_revision": "Major revisions required",
+        }
+        lines.append(f"Outcome: {outcome_labels.get(outcome, outcome)} (rounds: {rounds}).")
+        lines.append(f"Overall alignment: {alignment:.0%}.")
+
+        if weights:
+            weight_parts = [f"{k}: {v:.0%}" for k, v in sorted(weights.items())]
+            lines.append(f"Perspective weights: {', '.join(weight_parts)}.")
+
+        if amendments:
+            lines.append(f"{len(amendments)} amendment{'s' if len(amendments) != 1 else ''} applied to the plan.")
+
+        return {"title": "Strategic Debate", "content": "\n".join(lines)}
 
     @staticmethod
     def _outlook_section(state: LearnerState) -> dict[str, str]:

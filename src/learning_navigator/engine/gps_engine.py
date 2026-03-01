@@ -26,6 +26,12 @@ from typing import Any
 import structlog
 
 from learning_navigator.agents.behavior import BehaviorAgent
+from learning_navigator.agents.debate_advocates import (
+    BurnoutMinimizer,
+    ExamStrategist,
+    MasteryMaximizer,
+)
+from learning_navigator.agents.debate_arbitrator import DebateArbitrator
 from learning_navigator.agents.decay import DecayAgent
 from learning_navigator.agents.diagnoser import DiagnoserAgent
 from learning_navigator.agents.drift_detector import DriftDetectorAgent
@@ -42,6 +48,7 @@ from learning_navigator.contracts.events import (
 )
 from learning_navigator.contracts.learner_state import LearnerState
 from learning_navigator.contracts.messages import MessageEnvelope, MessageType
+from learning_navigator.engine.debate import DebateEngine, DebateResult
 from learning_navigator.engine.event_bus import EventBus
 from learning_navigator.engine.hitl import (
     DefaultHITLHook,
@@ -69,6 +76,8 @@ class LearningGPSEngine:
         hitl_hook: HITLHook | None = None,
         confidence_threshold: float = 0.6,
         maker_checker_rounds: int = 2,
+        debate_enabled: bool = True,
+        max_debate_rounds: int = 2,
     ) -> None:
         self.memory_store = memory_store
         self.portfolio_logger = portfolio_logger
@@ -89,11 +98,29 @@ class LearningGPSEngine:
         self.generative_replay = GenerativeReplayAgent()
         self.reflection = ReflectionAgent()
 
+        # Debate advocates + arbitrator
+        self.mastery_maximizer = MasteryMaximizer()
+        self.exam_strategist = ExamStrategist()
+        self.burnout_minimizer = BurnoutMinimizer()
+        self.debate_arbitrator = DebateArbitrator()
+
         # Maker-Checker: Planner makes, Evaluator checks
         self.maker_checker = MakerChecker(
             maker=self.planner,
             checker=self.evaluator,
             max_rounds=maker_checker_rounds,
+        )
+
+        # Strategic debate engine (post Maker-Checker)
+        self.debate_engine = DebateEngine(
+            advocates=[
+                self.mastery_maximizer,
+                self.exam_strategist,
+                self.burnout_minimizer,
+            ],
+            arbitrator=self.debate_arbitrator,
+            max_rounds=max_debate_rounds,
+            enabled=debate_enabled,
         )
 
     async def process_event(
@@ -204,6 +231,20 @@ class LearningGPSEngine:
             "issues": len(mc_result.issues),
         })
 
+        # 5b. Strategic Debate (post Maker-Checker)
+        debate_result = await self.debate_engine.run(
+            plan=mc_result.maker_response,
+            learner_state_raw=state.model_dump(mode="json"),
+            correlation_id=trace_id,
+        )
+        debug_trace["pipeline_steps"].append({
+            "agent": "debate",
+            "outcome": debate_result.outcome.value,
+            "rounds": debate_result.rounds_used,
+            "amendments": len(debate_result.accepted_amendments),
+            "alignment": debate_result.overall_alignment,
+        })
+
         # 6. HITL check
         hitl_decision = await self._run_hitl(
             state, mc_result.maker_response, mc_result
@@ -219,6 +260,7 @@ class LearningGPSEngine:
             state, diagnosis, drift_response, motivation_response,
             mc_result.maker_response, skill_response, behavior_response,
             time_response, decay_response, replay_response,
+            debate_result=debate_result,
         )
         debug_trace["pipeline_steps"].append({
             "agent": "reflection",
@@ -393,8 +435,19 @@ class LearningGPSEngine:
         time_response: dict[str, Any],
         decay_response: dict[str, Any] | None = None,
         replay_response: dict[str, Any] | None = None,
+        debate_result: DebateResult | None = None,
     ) -> dict[str, Any]:
         """Run the reflection agent with full pipeline context."""
+        debate_payload: dict[str, Any] = {}
+        if debate_result is not None:
+            debate_payload = {
+                "outcome": debate_result.outcome.value,
+                "rounds_used": debate_result.rounds_used,
+                "overall_alignment": debate_result.overall_alignment,
+                "accepted_amendments": debate_result.accepted_amendments,
+                "perspective_weights": debate_result.perspective_weights,
+            }
+
         msg = MessageEnvelope(
             message_type=MessageType.REFLECTION_REQUEST,
             source_agent_id="engine",
@@ -410,6 +463,7 @@ class LearningGPSEngine:
                 "time_response": time_response,
                 "decay_response": decay_response or {},
                 "replay_response": replay_response or {},
+                "debate_response": debate_payload,
             },
         )
         resp = await self.reflection.handle(msg)
