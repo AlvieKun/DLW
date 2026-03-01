@@ -112,11 +112,11 @@ Learning Navigator is a **production-grade multi-agent AI system** designed to g
 | **Evaluator Agent** | ✅ Done | 6-check plan quality: prereq violation, overload, cognitive load, empty plan, time, priority | 3 |
 | **Maker–Checker** | ✅ Done | Maker→Checker loop with configurable rounds and min quality score | 3 |
 | **HITL Hooks** | ✅ Done | Pluggable human-in-the-loop review with auto-approve threshold | 3 |
-| **Learning GPS Engine** | ✅ Done | Full pipeline orchestrator: Event → Diagnose → Drift → Motivate → Plan → Check → HITL → Action | 3 |
-| **Skill State Agent** | 🔲 Planned | BKT mastery tracking + knowledge graph | 4 |
-| **Behavior Agent** | 🔲 Planned | Pattern anomaly detection | 4 |
-| **Time Optimizer** | 🔲 Planned | Constrained time allocation optimization | 4 |
-| **Reflection Agent** | 🔲 Planned | Explainable narrative generation | 4 |
+| **Learning GPS Engine** | ✅ Done | Full pipeline: Event → Diagnose → Drift → Motivate → SkillState → Behavior → TimeOpt → Plan → Check → HITL → Reflect → Action | 3-4 |
+| **Skill State Agent** | ✅ Done | Knowledge graph analysis, prerequisite-gap detection, concept-readiness scoring, cluster analysis, learning-order suggestions | 4 |
+| **Behavior Agent** | ✅ Done | 5 anomaly types: cramming, rapid guessing, concept avoidance, irregular sessions, late-night study | 4 |
+| **Time Optimizer** | ✅ Done | Urgency x importance scoring, proportional time allocation, deadline analysis, motivation-adaptive session lengths | 4 |
+| **Reflection Agent** | ✅ Done | 8-section narrative generation: progress, session, motivation, drift, behavior, plan, knowledge graph, outlook | 4 |
 | **Decay Agent** | 🔲 Planned | Ebbinghaus forgetting + refresh scheduling | 5 |
 | **Generative Replay** | 🔲 Planned | Re-entry stories + memory consolidation | 5 |
 | **Mastery Maximizer** | 🔲 Planned | Debate: maximize deep understanding | 6 |
@@ -274,6 +274,16 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] Debug trace in NextBestAction output
 - [x] 132 passing tests
 
+### Phase 4 — Specialized Agents ✅
+- [x] **SkillStateAgent** — Knowledge graph analysis: prerequisite-gap detection, concept-readiness scoring, cluster analysis, learning-order suggestions
+- [x] **BehaviorAgent** — 5 anomaly types: cramming, rapid guessing, concept avoidance, irregular sessions, late-night study
+- [x] **TimeOptimizerAgent** — Urgency x importance scoring, proportional time allocation (max 6 concepts/session), deadline analysis, motivation-adaptive session lengths
+- [x] **ReflectionAgent** — 8-section narrative generation from full pipeline context with citation tracking
+- [x] Integrated all 4 agents into GPS Engine pipeline (9-agent pipeline + maker-checker + HITL)
+- [x] 8 new MessageType values for Phase 4 agent routing
+- [x] Behavioral anomalies applied to LearnerState
+- [x] 172 passing tests
+
 ---
 
 ## Known Limitations
@@ -282,7 +292,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - EventBus is in-process only (no distributed messaging)
 - Storage is local JSON files only (Azure stubs are no-ops until SDK is configured)
 - Pipeline ordering is static (adaptive routing in Phase 8)
-- No FastAPI server yet (Phase 4+)
+- No FastAPI server yet (Phase 5+)
 - RAG subsystem not yet implemented (Phase 7)
 
 ---
@@ -292,7 +302,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] **Phase 1:** Repo bootstrap + architecture skeleton
 - [x] **Phase 2:** Learner state core + storage abstractions
 - [x] **Phase 3:** Core agents v1 + Maker-Checker + HITL + GPS Engine orchestrator
-- [ ] **Phase 4:** Specialized agents (Skill State, Behavior, Time Optimizer, Reflection)
+- [x] **Phase 4:** Specialized agents (Skill State, Behavior, Time Optimizer, Reflection)
 - [ ] **Phase 5:** Continual learning (Decay Agent, Generative Replay)
 - [ ] **Phase 6:** Strategic debate system
 - [ ] **Phase 7:** Learner-aware RAG with grounding

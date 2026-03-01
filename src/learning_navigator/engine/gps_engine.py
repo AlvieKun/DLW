@@ -25,11 +25,15 @@ from typing import Any
 
 import structlog
 
+from learning_navigator.agents.behavior import BehaviorAgent
 from learning_navigator.agents.diagnoser import DiagnoserAgent
 from learning_navigator.agents.drift_detector import DriftDetectorAgent
 from learning_navigator.agents.evaluator import EvaluatorAgent
 from learning_navigator.agents.motivation import MotivationAgent
 from learning_navigator.agents.planner import PlannerAgent
+from learning_navigator.agents.reflection import ReflectionAgent
+from learning_navigator.agents.skill_state import SkillStateAgent
+from learning_navigator.agents.time_optimizer import TimeOptimizerAgent
 from learning_navigator.contracts.events import (
     LearnerEvent,
     NextBestAction,
@@ -76,6 +80,10 @@ class LearningGPSEngine:
         self.motivation_agent = MotivationAgent()
         self.planner = PlannerAgent()
         self.evaluator = EvaluatorAgent()
+        self.skill_state = SkillStateAgent()
+        self.behavior = BehaviorAgent()
+        self.time_optimizer = TimeOptimizerAgent()
+        self.reflection = ReflectionAgent()
 
         # Maker-Checker: Planner makes, Evaluator checks
         self.maker_checker = MakerChecker(
@@ -142,6 +150,28 @@ class LearningGPSEngine:
         # Apply motivation update to state
         state = self._apply_motivation(state, motivation_response)
 
+        # 4b. Skill State analysis
+        skill_response = await self._run_skill_state(state)
+        debug_trace["pipeline_steps"].append({
+            "agent": "skill_state",
+            "gaps": len(skill_response.get("prerequisite_gaps", [])),
+        })
+
+        # 4c. Behavior analysis
+        behavior_response = await self._run_behavior(state, event)
+        debug_trace["pipeline_steps"].append({
+            "agent": "behavior",
+            "anomalies": behavior_response.get("anomaly_count", 0),
+        })
+        state = self._apply_behavior(state, behavior_response)
+
+        # 4d. Time Optimization
+        time_response = await self._run_time_optimizer(state)
+        debug_trace["pipeline_steps"].append({
+            "agent": "time_optimizer",
+            "allocations": len(time_response.get("allocations", [])),
+        })
+
         # 5. Plan + Evaluate via Maker-Checker
         plan_message = self._build_plan_message(state, diagnosis, trace_id)
         mc_result = await self.maker_checker.run(
@@ -164,6 +194,17 @@ class LearningGPSEngine:
         # 7. Save updated state
         state.updated_at = datetime.now(timezone.utc)
         await self.memory_store.save_learner_state(state)
+
+        # 7b. Reflection narrative (post-pipeline)
+        reflection_response = await self._run_reflection(
+            state, diagnosis, drift_response, motivation_response,
+            mc_result.maker_response, skill_response, behavior_response,
+            time_response,
+        )
+        debug_trace["pipeline_steps"].append({
+            "agent": "reflection",
+            "sections": reflection_response.get("section_count", 0),
+        })
 
         # 8. Publish event on bus
         await self._publish_result(event, mc_result, trace_id)
@@ -242,6 +283,82 @@ class LearningGPSEngine:
             },
         )
         resp = await self.motivation_agent.handle(msg)
+        return resp.payload
+
+    async def _run_skill_state(
+        self, state: LearnerState
+    ) -> dict[str, Any]:
+        """Run the skill state agent."""
+        msg = MessageEnvelope(
+            message_type=MessageType.SKILL_STATE_REQUEST,
+            source_agent_id="engine",
+            target_agent_id="skill-state",
+            payload={
+                "learner_state": state.model_dump(mode="json"),
+            },
+        )
+        resp = await self.skill_state.handle(msg)
+        return resp.payload
+
+    async def _run_behavior(
+        self, state: LearnerState, event: LearnerEvent
+    ) -> dict[str, Any]:
+        """Run the behavior agent."""
+        msg = MessageEnvelope(
+            message_type=MessageType.BEHAVIOR_REQUEST,
+            source_agent_id="engine",
+            target_agent_id="behavior",
+            payload={
+                "learner_state": state.model_dump(mode="json"),
+                "event": event.model_dump(mode="json"),
+            },
+        )
+        resp = await self.behavior.handle(msg)
+        return resp.payload
+
+    async def _run_time_optimizer(
+        self, state: LearnerState
+    ) -> dict[str, Any]:
+        """Run the time optimizer agent."""
+        msg = MessageEnvelope(
+            message_type=MessageType.TIME_ALLOCATION_REQUEST,
+            source_agent_id="engine",
+            target_agent_id="time-optimizer",
+            payload={
+                "learner_state": state.model_dump(mode="json"),
+            },
+        )
+        resp = await self.time_optimizer.handle(msg)
+        return resp.payload
+
+    async def _run_reflection(
+        self,
+        state: LearnerState,
+        diagnosis: dict[str, Any],
+        drift_response: dict[str, Any],
+        motivation_response: dict[str, Any],
+        plan_response: dict[str, Any],
+        skill_state_response: dict[str, Any],
+        behavior_response: dict[str, Any],
+        time_response: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Run the reflection agent with full pipeline context."""
+        msg = MessageEnvelope(
+            message_type=MessageType.REFLECTION_REQUEST,
+            source_agent_id="engine",
+            target_agent_id="reflection",
+            payload={
+                "learner_state": state.model_dump(mode="json"),
+                "diagnosis": diagnosis,
+                "drift_response": drift_response,
+                "motivation_response": motivation_response,
+                "plan_response": plan_response,
+                "skill_state_response": skill_state_response,
+                "behavior_response": behavior_response,
+                "time_response": time_response,
+            },
+        )
+        resp = await self.reflection.handle(msg)
         return resp.payload
 
     def _build_plan_message(
@@ -430,4 +547,22 @@ class LearningGPSEngine:
         if trend is not None:
             state.motivation.trend = trend
 
+        return state
+
+    @staticmethod
+    def _apply_behavior(
+        state: LearnerState, behavior_response: dict[str, Any]
+    ) -> LearnerState:
+        """Apply behavioural anomalies to learner state."""
+        from learning_navigator.contracts.learner_state import BehavioralAnomaly
+
+        anomalies = behavior_response.get("anomalies", [])
+        for anomaly in anomalies:
+            state.behavioral_anomalies.append(
+                BehavioralAnomaly(
+                    anomaly_type=anomaly.get("anomaly_type", "unknown"),
+                    severity=anomaly.get("severity", 0.5),
+                    evidence=anomaly.get("evidence", {}),
+                )
+            )
         return state

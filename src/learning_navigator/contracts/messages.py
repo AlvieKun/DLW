@@ -61,6 +61,16 @@ class MessageType(str, Enum):
     CHECK_REQUEST = "check_request"
     CHECK_RESULT = "check_result"
 
+    # Phase 4 specialized agents
+    SKILL_STATE_REQUEST = "skill_state_request"
+    SKILL_STATE_RESULT = "skill_state_result"
+    BEHAVIOR_REQUEST = "behavior_request"
+    BEHAVIOR_RESULT = "behavior_result"
+    TIME_ALLOCATION_REQUEST = "time_allocation_request"
+    TIME_ALLOCATION_RESULT = "time_allocation_result"
+    REFLECTION_REQUEST = "reflection_request"
+    REFLECTION_RESULT = "reflection_result"
+
     # Human-in-the-loop
     HITL_OVERRIDE = "hitl_override"
     HITL_EXPLANATION = "hitl_explanation"

@@ -141,76 +141,129 @@ All agents are O(n) where n = number of concepts in the learner's state (typical
 ## 5. Skill State (BKT + Knowledge Graph)
 
 ### Why Chosen
-<!-- Phase 4: Fill in when implemented -->
+The Skill State Agent adds *relational analysis* on top of the Diagnoser's per-concept BKT updates. While the Diagnoser updates mastery for individual concepts, it doesn't reason about the *relationships* between concepts. The Skill State Agent fills this gap:
+
+- **Concept readiness scoring**: Before recommending calculus, verify that algebra prerequisites are met. Readiness = min(prerequisite masteries), gated at a configurable threshold (default 0.6).
+- **Prerequisite gap detection**: Identifies concepts that are blocked by under-mastered prerequisites, sorted by severity.
+- **Cluster analysis**: Groups concepts into connected components via BFS on the knowledge graph. Reveals which knowledge clusters are strong vs weak.
+- **Learning order suggestion**: Produces a priority-ranked list using `readiness x (1 - mastery)`, filtering out already-mastered concepts.
 
 ### Alternatives Considered
-<!-- Phase 4 -->
+| Alternative | Why Rejected |
+|---|---|
+| Graph DB (Neo4j) | Operational complexity; adjacency list sufficient for hundreds of concepts |
+| LLM-based prerequisite inference | Expensive, non-deterministic; curriculum structure is known a priori |
+| Topological sort only | Doesn't account for current mastery levels — a concept may be "next" but the learner isn't ready |
+| Merge into Diagnoser | Violates single responsibility; graph analysis is orthogonal to BKT updates |
 
 ### Failure Modes
-<!-- Phase 4 -->
+- **Incomplete knowledge graph**: Missing prerequisite edges lead to false "ready" signals. Mitigation: Evaluator checks for prerequisite violations; teachers can edit graph via HITL.
+- **Circular prerequisites**: Would cause infinite loops in BFS. Mitigation: BFS uses visited set; cycles are harmless.
+- **Stale readiness when mastery decays**: Readiness is snapshot-based. Mitigation: re-computed every pipeline tick.
 
 ### Trust / Explainability Impact
-<!-- Phase 4 -->
+The Reflection Agent cites prerequisite gaps and learning order in its narrative. Teachers can see *why* a concept was recommended or blocked. The cluster visualization (future UI) makes knowledge structure transparent.
 
 ### Computational Tradeoffs
-<!-- Phase 4 -->
+BFS is O(V + E) where V = concepts, E = relations. For typical learner graphs (100-1000 concepts), this is sub-millisecond. Readiness computation is O(V x max_prerequisites), also negligible.
 
 ---
 
 ## 6. Behavior Anomaly Detection
 
 ### Why Chosen
-<!-- Phase 4: Fill in when implemented -->
+The Behavior Agent detects *how* a learner interacts, complementing the Diagnoser (*what* they know) and Drift Detector (*learning trajectory*). Five anomaly types are implemented:
+
+1. **Cramming**: High practice volume concentrated near a deadline. Detected via session count + deadline proximity + practice concentration.
+2. **Rapid guessing**: Very short response times suggesting random guessing rather than genuine engagement. Uses `response_time_seconds` from event data, cross-referenced with concept mastery.
+3. **Concept avoidance**: Systematically skipping certain concepts while practicing others heavily. Detected via practice count disparity across concepts.
+4. **Irregular sessions**: Highly variable spacing intervals (coefficient of variation > threshold). Consistent practice schedules improve retention.
+5. **Late-night study**: Sessions at unusual hours (00:00-05:00 UTC), which correlate with reduced retention and fatigue.
+
+Each anomaly returns a severity score and supporting evidence.
 
 ### Alternatives Considered
-<!-- Phase 4 -->
+| Alternative | Why Rejected |
+|---|---|
+| Statistical process control (SPC) | Too rigid for variable learner patterns; requires baseline calibration |
+| ML anomaly detection (Isolation Forest) | Requires training data; opaque; overkill for v1 heuristics |
+| Merge into Drift Detector | Different concerns: drift = learning trajectory, behavior = interaction patterns |
+| LLM-based behavior analysis | Expensive, non-deterministic for pattern detection that's well-served by heuristics |
 
 ### Failure Modes
-<!-- Phase 4 -->
+- **False positives**: Aggressive thresholds flag normal weekend breaks as "irregular." Mitigation: configurable thresholds; late-night detection respects UTC (future: learner timezone).
+- **False negatives**: Subtle avoidance patterns missed if practice counts are close to threshold. Mitigation: `avoidance_practice_ratio` is tunable.
+- **Missing event data**: `response_time_seconds` may not be available for all event types. Mitigation: each detector gracefully returns None when data is insufficient.
 
 ### Trust / Explainability Impact
-<!-- Phase 4 -->
+Anomalies are surfaced in the Reflection Agent's narrative with actionable advice (e.g., "spread study sessions more evenly"). Evidence is logged for teacher review. Anomaly types are human-readable, not opaque model scores.
 
 ### Computational Tradeoffs
-<!-- Phase 4 -->
+All detectors are O(n) where n = number of concepts. Coefficient of variation for irregular sessions is O(m) where m = total spacing intervals. Total: sub-millisecond.
 
 ---
 
 ## 7. Time Optimization
 
 ### Why Chosen
-<!-- Phase 4: Fill in when implemented -->
+The Time Optimizer solves a constrained allocation problem: given limited session time, which concepts should receive how many minutes? It uses:
+
+- **Urgency x importance scoring**: Urgency = mastery_gap x 2 + forgetting x 1.5. Importance = 1 + dependent_count x 0.5 + priority_boost (2.0 for flagged concepts).
+- **Proportional allocation**: Minutes are distributed proportionally by score, with a minimum block size (5 min) and maximum 6 concepts per session to avoid fragmentation.
+- **Motivation-adaptive sessions**: LOW motivation reduces session to 70%; CRITICAL to 50%.
+- **Deadline analysis**: Exponential urgency curve as deadline approaches; checks if time budget is sufficient for remaining concepts.
+- **Action type assignment**: `learn_new` (mastery < 0.3), `practice` (< 0.6), `deepen` (< 0.85), `maintain` (≥ 0.85), `spaced_review` (forgetting > 0.5).
 
 ### Alternatives Considered
-<!-- Phase 4 -->
+| Alternative | Why Rejected |
+|---|---|
+| Linear programming (LP) | Over-engineered for v1; proportional allocation is interpretable and fast |
+| Equal time per concept | Ignores urgency; wastes time on mastered concepts |
+| LLM-based scheduling | Expensive, non-deterministic for a well-defined optimization problem |
+| Merge into Planner | Planner decides *what* to study; Time Optimizer decides *how long*. Different concerns. |
 
 ### Failure Modes
-<!-- Phase 4 -->
+- **Over-fragmentation**: Many concepts with similar scores get tiny time blocks. Mitigation: 5-min minimum block + 6-concept cap.
+- **Deadline panic**: Very short deadline causes extreme urgency scores. Mitigation: urgency is clamped to [0, 1]; session length is bounded.
+- **Motivation override**: Shortened sessions may be insufficient for complex topics. Mitigation: minimum session length of 10 minutes.
 
 ### Trust / Explainability Impact
-<!-- Phase 4 -->
+The allocation plan shows exactly how many minutes each concept gets and why (score breakdown, priority flag, action type). The Reflection Agent narrates this as "Allocated N minutes across M concepts."
 
 ### Computational Tradeoffs
-<!-- Phase 4 -->
+Scoring is O(n) with constant-factor graph lookups for dependents. Allocation is O(n log n) for sorting. Total: sub-millisecond for typical learner states.
 
 ---
 
 ## 8. Reflection Narrative
 
 ### Why Chosen
-<!-- Phase 4: Fill in when implemented -->
+The Reflection Agent is the explainability layer of the system. It reads the outputs of *all* previous pipeline stages and synthesizes a coherent, human-readable narrative. This is critical because:
+
+- **Multi-agent systems are hard to explain**: When 9 agents contribute to a recommendation, no single agent's output tells the full story.
+- **Teacher trust requires transparency**: Educators need to understand *why* a recommendation was made before approving it.
+- **Learner engagement**: Personalized narratives ("You improved on algebra this session") reinforce motivation better than raw scores.
+
+The agent produces 8 sections: Progress Overview, This Session, Motivation, Learning Drift, Behavioral Patterns, Recommendations, Knowledge Graph, Looking Ahead. Empty sections are filtered out. Citations track which upstream agents contributed data.
 
 ### Alternatives Considered
-<!-- Phase 4 -->
+| Alternative | Why Rejected |
+|---|---|
+| LLM-generated narratives | Would produce better prose but adds cost, latency, and non-determinism. Template-based is sufficient for v1; LLM upgrade is a future option. |
+| Dashboard-only (no narrative) | Dashboards show *what* happened but not *why*. Narrative adds causal reasoning. |
+| Per-agent explanations only | Fragmented; doesn't show cross-agent interactions (e.g., "low motivation + cramming suggests burnout risk"). |
+| Merge into Evaluator | Evaluator judges quality; Reflection explains the full picture. Different audiences. |
 
 ### Failure Modes
-<!-- Phase 4 -->
+- **Stale context**: If an upstream agent errored, its response is empty and the Reflection Agent produces a thinner narrative. Mitigation: graceful degradation — missing sections are simply omitted.
+- **Generic narratives**: New learners with little data get bland summaries. Mitigation: "Early stage — start with the basics" messaging; richness increases as more data accumulates.
+- **Incorrect citations**: If agent responses change format, citations may miss them. Mitigation: citation logic checks for non-empty dicts, independent of specific keys.
 
 ### Trust / Explainability Impact
-<!-- Phase 4 -->
+The Reflection Agent *is* the trust mechanism for learner-facing deployments. Every recommendation is accompanied by a narrative explaining progress, motivation, drift signals, behavioral patterns, and the plan's rationale. Citations provide audit trail back to specific agents.
 
 ### Computational Tradeoffs
-<!-- Phase 4 -->
+Pure string construction from pre-computed data. No network calls, no LLM tokens. Cost: O(n) string concatenation where n = number of concepts. Negligible latency (<1ms).
 
 ---
 
