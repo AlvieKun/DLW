@@ -125,6 +125,8 @@ Learning Navigator is a **production-grade multi-agent AI system** designed to g
 | **Burnout Minimizer** | ✅ Done | Debate: session-length caps, cognitive overload, new-content ratio, stress signals, motivation trend | 6 |
 | **Debate Arbitrator** | ✅ Done | Contextual perspective weighting (deadline/motivation/anomaly-aware), objection scoring, amendment acceptance | 6 |
 | **RAG Agent** | ✅ Done | Learner-aware retrieval queries, citation grounding, deduplication, mastery/action/prerequisite-aware search | 7 |
+| **Adaptive Router** | ✅ Done | Cost-aware uncertainty-driven agent selection, greedy knapsack, core-agent guarantee, value-density ranking, contextual need scoring | 8 |
+| **Confidence Calibrator** | ✅ Done | Exponential-decay trust weighting, per-agent outcome tracking, cold-start passthrough, calibrated confidence output | 8 |
 
 ---
 
@@ -231,7 +233,7 @@ Uses learner state uncertainty + cost budget to dynamically select which agents 
 ### D2: Dynamic Agent Confidence Weighting
 Each agent self-reports confidence with calibration metadata. The orchestrator tracks historical accuracy and weights agent contributions dynamically. Over-confident agents are dampened; well-calibrated agents gain influence. **Result:** system improves its own reliability over time without retraining.
 
-*Implementation: Phase 8. Status: 🔲 Planned.*
+*Implementation: Phase 8. Status: ✅ Done.*
 
 ---
 
@@ -318,6 +320,15 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] 16-agent pipeline: Event → Diagnose → Drift → Motivate → SkillState → Behavior → Decay → Replay → TimeOpt → Plan+Check → Debate → RAG → HITL → Reflect → Action
 - [x] 290 passing tests
 
+### Phase 8 — Competitive Differentiators ✅
+- [x] **AdaptiveRouter** — Cost-aware, uncertainty-driven agent selection: greedy knapsack over cost budgets, core-agent guarantee (diagnoser + motivation always run), value-density ranking, periodic full-pipeline refresh, contextual need scoring (drift, decay, anomalies)
+- [x] **ConfidenceCalibrator** — Exponential-decay weighted outcome tracking per agent, trust_weight computation (actual/reported ratio), cold-start passthrough, clamped [0.3, 1.5] trust range, per-agent independence
+- [x] GPS Engine integration: routing step after state load, conditional agent execution via `_should_run()` guards, routing decisions in debug trace, confidence calibration on final NBA
+- [x] Pipeline steps record `skipped: true` for agents bypassed by routing
+- [x] Config: `adaptive_routing_enabled`, `cost_budget_per_turn` settings
+- [x] Engine exports: `AdaptiveRouter`, `RoutingDecision`, `ConfidenceCalibrator`, `CalibrationRecord`
+- [x] 354 passing tests
+
 ---
 
 ## Known Limitations
@@ -325,8 +336,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - No actual LLM integration yet — agents are rule-based / deterministic (by design for v1 local-first)
 - EventBus is in-process only (no distributed messaging)
 - Storage is local JSON files only (Azure stubs are no-ops until SDK is configured)
-- Pipeline ordering is static (adaptive routing in Phase 8)
-- No FastAPI server yet (Phase 8+)
+- No FastAPI server yet (Phase 9+)
 
 ---
 
@@ -339,6 +349,6 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] **Phase 5:** Continual learning (Decay Agent, Generative Replay)
 - [x] **Phase 6:** Strategic debate system
 - [x] **Phase 7:** Learner-aware RAG with grounding
-- [ ] **Phase 8:** Competitive differentiators (Adaptive Routing, Confidence Weighting)
+- [x] **Phase 8:** Competitive differentiators (Adaptive Routing, Confidence Weighting)
 - [ ] **Phase 9:** Azure deployment scaffolding
 - [ ] **Phase 10:** Evaluation harness + documentation completion

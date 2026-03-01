@@ -460,8 +460,16 @@ Adds lightweight routing logic (~1ms) but can save 50-80% of agent execution tim
 ## 14. Competitive Differentiator: Dynamic Agent Confidence Weighting
 
 ### Why Chosen
-<!-- Phase 8: Fill in fully when implemented -->
-Agents self-report confidence, but self-assessment can be systematically biased. Dynamic weighting tracks actual prediction accuracy against outcomes and adjusts influence weights, creating a self-correcting ensemble without retraining individual agents.
+Agents self-report confidence, but self-assessment can be systematically biased. The `ConfidenceCalibrator` tracks actual prediction accuracy against outcomes and adjusts influence weights per agent, creating a **self-correcting ensemble** without retraining individual agents.
+
+**Implementation details:**
+- `CalibrationRecord` stores (reported_confidence, actual_accuracy, timestamp) per observation.
+- `AgentCalibration` maintains a per-agent sliding window of records (default max 100).
+- `trust_weight` is computed as the exponential-decay weighted average of `actual / reported` ratios, clamped to [0.3, 1.5].
+- `calibrate(agent_id, raw_confidence)` multiplies raw confidence by trust_weight, clamped to [0, 1].
+- **Cold start:** returns raw confidence (no adjustment) until `min_observations` (default 3) are reached.
+- **Decay factor** (default 0.9): recent observations weigh more, creating an effective ~10-observation rolling window.
+- The GPS Engine applies calibration to the final `NextBestAction.confidence` via `calibrate("engine", raw_confidence)`.
 
 ### Alternatives Considered
 | Alternative | Why Rejected |

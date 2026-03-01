@@ -25,6 +25,7 @@ from typing import Any
 
 import structlog
 
+from learning_navigator.agents.base import BaseAgent
 from learning_navigator.agents.behavior import BehaviorAgent
 from learning_navigator.agents.debate_advocates import (
     BurnoutMinimizer,
@@ -49,6 +50,8 @@ from learning_navigator.contracts.events import (
 )
 from learning_navigator.contracts.learner_state import LearnerState
 from learning_navigator.contracts.messages import MessageEnvelope, MessageType
+from learning_navigator.engine.adaptive_router import AdaptiveRouter
+from learning_navigator.engine.confidence_calibrator import ConfidenceCalibrator
 from learning_navigator.engine.debate import DebateEngine, DebateResult
 from learning_navigator.engine.event_bus import EventBus
 from learning_navigator.engine.hitl import (
@@ -84,6 +87,8 @@ class LearningGPSEngine:
         maker_checker_rounds: int = 2,
         debate_enabled: bool = True,
         max_debate_rounds: int = 2,
+        adaptive_routing_enabled: bool = False,
+        cost_budget_per_turn: float = 10.0,
     ) -> None:
         self.memory_store = memory_store
         self.portfolio_logger = portfolio_logger
@@ -135,6 +140,33 @@ class LearningGPSEngine:
             enabled=debate_enabled,
         )
 
+        # Build the agent registry for adaptive routing
+        self._agent_registry: dict[str, BaseAgent] = {
+            self.diagnoser.agent_id: self.diagnoser,
+            self.drift_detector.agent_id: self.drift_detector,
+            self.motivation_agent.agent_id: self.motivation_agent,
+            self.skill_state.agent_id: self.skill_state,
+            self.behavior.agent_id: self.behavior,
+            self.decay.agent_id: self.decay,
+            self.generative_replay.agent_id: self.generative_replay,
+            self.time_optimizer.agent_id: self.time_optimizer,
+            self.planner.agent_id: self.planner,
+            self.evaluator.agent_id: self.evaluator,
+            self.reflection.agent_id: self.reflection,
+        }
+        if self.rag_agent is not None:
+            self._agent_registry[self.rag_agent.agent_id] = self.rag_agent
+
+        # Adaptive routing (Phase 8)
+        self.adaptive_router = AdaptiveRouter(
+            agents=self._agent_registry,
+            budget=cost_budget_per_turn,
+            enabled=adaptive_routing_enabled,
+        )
+
+        # Confidence calibrator (Phase 8)
+        self.confidence_calibrator = ConfidenceCalibrator()
+
     async def process_event(
         self, event: LearnerEvent
     ) -> NextBestAction:
@@ -162,6 +194,27 @@ class LearningGPSEngine:
             state = LearnerState(learner_id=event.learner_id)
             log.info("engine.new_learner_state")
 
+        # 1b. Adaptive routing — decide which agents to run
+        routing = self.adaptive_router.route(
+            state,
+            recent_drift_count=len(state.active_drift_signals),
+            recent_anomaly_count=len(state.behavioral_anomalies),
+            has_decay_risk=any(
+                c.forgetting_score > 0.5 for c in state.concepts.values()
+            ),
+        )
+        debug_trace["routing"] = {
+            "selected": routing.selected_agents,
+            "skipped": routing.skipped_agents,
+            "full_pipeline": routing.full_pipeline,
+            "budget": routing.budget,
+            "total_cost": routing.total_cost,
+            "uncertainty": routing.uncertainty_score,
+        }
+
+        def _should_run(agent_id: str) -> bool:
+            return agent_id in routing.selected_agents
+
         # 2. Diagnose
         diagnosis = await self._run_diagnoser(state, event)
         debug_trace["pipeline_steps"].append({
@@ -173,14 +226,18 @@ class LearningGPSEngine:
         state = self._apply_diagnosis(state, diagnosis)
 
         # 3. Detect drift
-        drift_response = await self._run_drift_detector(state)
-        debug_trace["pipeline_steps"].append({
-            "agent": "drift_detector",
-            "signals": len(drift_response.get("drift_signals", [])),
-        })
-
-        # Apply drift signals to state
-        state = self._apply_drift(state, drift_response)
+        if _should_run("drift-detector"):
+            drift_response = await self._run_drift_detector(state)
+            debug_trace["pipeline_steps"].append({
+                "agent": "drift_detector",
+                "signals": len(drift_response.get("drift_signals", [])),
+            })
+            state = self._apply_drift(state, drift_response)
+        else:
+            drift_response: dict[str, Any] = {"drift_signals": []}
+            debug_trace["pipeline_steps"].append(
+                {"agent": "drift_detector", "skipped": True}
+            )
 
         # 4. Assess motivation
         motivation_response = await self._run_motivation(state, event)
@@ -194,41 +251,73 @@ class LearningGPSEngine:
         state = self._apply_motivation(state, motivation_response)
 
         # 4b. Skill State analysis
-        skill_response = await self._run_skill_state(state)
-        debug_trace["pipeline_steps"].append({
-            "agent": "skill_state",
-            "gaps": len(skill_response.get("prerequisite_gaps", [])),
-        })
+        if _should_run("skill-state"):
+            skill_response = await self._run_skill_state(state)
+            debug_trace["pipeline_steps"].append({
+                "agent": "skill_state",
+                "gaps": len(skill_response.get("prerequisite_gaps", [])),
+            })
+        else:
+            skill_response: dict[str, Any] = {"prerequisite_gaps": []}
+            debug_trace["pipeline_steps"].append(
+                {"agent": "skill_state", "skipped": True}
+            )
 
         # 4c. Behavior analysis
-        behavior_response = await self._run_behavior(state, event)
-        debug_trace["pipeline_steps"].append({
-            "agent": "behavior",
-            "anomalies": behavior_response.get("anomaly_count", 0),
-        })
-        state = self._apply_behavior(state, behavior_response)
+        if _should_run("behavior"):
+            behavior_response = await self._run_behavior(state, event)
+            debug_trace["pipeline_steps"].append({
+                "agent": "behavior",
+                "anomalies": behavior_response.get("anomaly_count", 0),
+            })
+            state = self._apply_behavior(state, behavior_response)
+        else:
+            behavior_response: dict[str, Any] = {"anomaly_count": 0}
+            debug_trace["pipeline_steps"].append(
+                {"agent": "behavior", "skipped": True}
+            )
 
         # 4d. Decay analysis (forgetting curves)
-        decay_response = await self._run_decay(state)
-        debug_trace["pipeline_steps"].append({
-            "agent": "decay",
-            "at_risk": decay_response.get("at_risk_count", 0),
-        })
-        state = self._apply_decay(state, decay_response)
+        if _should_run("decay"):
+            decay_response = await self._run_decay(state)
+            debug_trace["pipeline_steps"].append({
+                "agent": "decay",
+                "at_risk": decay_response.get("at_risk_count", 0),
+            })
+            state = self._apply_decay(state, decay_response)
+        else:
+            decay_response: dict[str, Any] = {"at_risk_count": 0}
+            debug_trace["pipeline_steps"].append(
+                {"agent": "decay", "skipped": True}
+            )
 
         # 4e. Generative Replay (synthetic exercises)
-        replay_response = await self._run_generative_replay(state, decay_response)
-        debug_trace["pipeline_steps"].append({
-            "agent": "generative_replay",
-            "exercises": replay_response.get("total_exercises", 0),
-        })
+        if _should_run("generative-replay"):
+            replay_response = await self._run_generative_replay(
+                state, decay_response
+            )
+            debug_trace["pipeline_steps"].append({
+                "agent": "generative_replay",
+                "exercises": replay_response.get("total_exercises", 0),
+            })
+        else:
+            replay_response: dict[str, Any] = {"total_exercises": 0}
+            debug_trace["pipeline_steps"].append(
+                {"agent": "generative_replay", "skipped": True}
+            )
 
         # 4f. Time Optimization
-        time_response = await self._run_time_optimizer(state)
-        debug_trace["pipeline_steps"].append({
-            "agent": "time_optimizer",
-            "allocations": len(time_response.get("allocations", [])),
-        })
+        if _should_run("time-optimizer"):
+            time_response = await self._run_time_optimizer(state)
+            debug_trace["pipeline_steps"].append({
+                "agent": "time_optimizer",
+                "allocations": len(time_response.get("allocations", [])),
+            })
+        else:
+            time_response: dict[str, Any] = {"allocations": []}
+            debug_trace["pipeline_steps"].append(
+                {"agent": "time_optimizer", "skipped": True}
+            )
 
         # 5. Plan + Evaluate via Maker-Checker
         plan_message = self._build_plan_message(state, diagnosis, trace_id)
@@ -259,7 +348,7 @@ class LearningGPSEngine:
 
         # 5c. RAG retrieval — ground plan recommendations with citations
         rag_response: dict[str, Any] = {}
-        if self.rag_agent is not None:
+        if self.rag_agent is not None and _should_run("rag-agent"):
             rag_response = await self._run_rag(
                 state, mc_result.maker_response, diagnosis
             )
@@ -280,17 +369,22 @@ class LearningGPSEngine:
         await self.memory_store.save_learner_state(state)
 
         # 7b. Reflection narrative (post-pipeline)
-        reflection_response = await self._run_reflection(
-            state, diagnosis, drift_response, motivation_response,
-            mc_result.maker_response, skill_response, behavior_response,
-            time_response, decay_response, replay_response,
-            debate_result=debate_result,
-            rag_response=rag_response,
-        )
-        debug_trace["pipeline_steps"].append({
-            "agent": "reflection",
-            "sections": reflection_response.get("section_count", 0),
-        })
+        if _should_run("reflection"):
+            reflection_response = await self._run_reflection(
+                state, diagnosis, drift_response, motivation_response,
+                mc_result.maker_response, skill_response, behavior_response,
+                time_response, decay_response, replay_response,
+                debate_result=debate_result,
+                rag_response=rag_response,
+            )
+            debug_trace["pipeline_steps"].append({
+                "agent": "reflection",
+                "sections": reflection_response.get("section_count", 0),
+            })
+        else:
+            debug_trace["pipeline_steps"].append(
+                {"agent": "reflection", "skipped": True}
+            )
 
         # 8. Publish event on bus
         await self._publish_result(event, mc_result, trace_id)
@@ -299,6 +393,11 @@ class LearningGPSEngine:
         nba = self._build_next_best_action(
             event, mc_result, debug_trace, hitl_decision,
             rag_response=rag_response,
+        )
+
+        # 9b. Apply confidence calibration
+        nba.confidence = self.confidence_calibrator.calibrate(
+            "engine", nba.confidence,
         )
 
         # 10. Log to portfolio

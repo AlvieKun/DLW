@@ -1,5 +1,13 @@
 # Orchestrator / Learning GPS Engine
 
+from learning_navigator.engine.adaptive_router import (
+    AdaptiveRouter,
+    RoutingDecision,
+)
+from learning_navigator.engine.confidence_calibrator import (
+    CalibrationRecord,
+    ConfidenceCalibrator,
+)
 from learning_navigator.engine.debate import (
     DebateEngine,
     DebateOutcome,
@@ -21,7 +29,10 @@ from learning_navigator.engine.maker_checker import (
 )
 
 __all__ = [
+    "AdaptiveRouter",
+    "CalibrationRecord",
     "CheckVerdict",
+    "ConfidenceCalibrator",
     "DebateEngine",
     "DebateOutcome",
     "DebateResult",
@@ -35,4 +46,5 @@ __all__ = [
     "LearningGPSEngine",
     "MakerChecker",
     "MakerCheckerResult",
+    "RoutingDecision",
 ]
