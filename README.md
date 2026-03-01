@@ -75,8 +75,9 @@ Learning Navigator is a **production-grade multi-agent AI system** designed to g
 │  │  │          │ │  │Mastery ││Exam ││Burnout │ │        │    │
 │  │  │          │ │  │Maximizr││Strat││Minimzr │ │        │    │
 │  │  └──────────┘ │  └────────┘└─────┘└────────┘ │        │    │
-│  │               │       ▼ Arbiter ▼             │        │    │
-│  │               └──────────────────────────────┘        │    │
+│  │  ┌──────────┐ │       ▼ Arbiter ▼             │        │    │
+│  │  │RAG Agent │ └──────────────────────────────┘        │    │
+│  │  └──────────┘                                         │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
@@ -112,17 +113,18 @@ Learning Navigator is a **production-grade multi-agent AI system** designed to g
 | **Evaluator Agent** | ✅ Done | 6-check plan quality: prereq violation, overload, cognitive load, empty plan, time, priority | 3 |
 | **Maker–Checker** | ✅ Done | Maker→Checker loop with configurable rounds and min quality score | 3 |
 | **HITL Hooks** | ✅ Done | Pluggable human-in-the-loop review with auto-approve threshold | 3 |
-| **Learning GPS Engine** | ✅ Done | Full pipeline: Event → Diagnose → Drift → Motivate → SkillState → Behavior → Decay → Replay → TimeOpt → Plan → Check → Debate → HITL → Reflect → Action | 3-6 |
+| **Learning GPS Engine** | ✅ Done | Full pipeline: Event → Diagnose → Drift → Motivate → SkillState → Behavior → Decay → Replay → TimeOpt → Plan → Check → Debate → RAG → HITL → Reflect → Action | 3-7 |
 | **Skill State Agent** | ✅ Done | Knowledge graph analysis, prerequisite-gap detection, concept-readiness scoring, cluster analysis, learning-order suggestions | 4 |
 | **Behavior Agent** | ✅ Done | 5 anomaly types: cramming, rapid guessing, concept avoidance, irregular sessions, late-night study | 4 |
 | **Time Optimizer** | ✅ Done | Urgency x importance scoring, proportional time allocation, deadline analysis, motivation-adaptive session lengths | 4 |
-| **Reflection Agent** | ✅ Done | 10-section narrative generation: progress, session, motivation, drift, behavior, decay, exercises, plan, knowledge graph, debate, outlook | 4-6 |
+| **Reflection Agent** | ✅ Done | 11-section narrative generation: progress, session, motivation, drift, behavior, decay, exercises, plan, knowledge graph, debate, RAG grounding, outlook | 4-7 |
 | **Decay Agent** | ✅ Done | Ebbinghaus forgetting curves, memory stability estimation, spaced-repetition review scheduling, at-risk concept flagging | 5 |
 | **Generative Replay** | ✅ Done | Calibrated replay exercises, retrieval practice, interleaved concept sets, difficulty calibration | 5 |
 | **Mastery Maximizer** | ✅ Done | Debate: prerequisite violations, depth checks, forgetting-gap detection, topic-count analysis | 6 |
 | **Exam Strategist** | ✅ Done | Debate: priority-concept coverage, deadline pressure, maintenance ratio, practice-test suggestions | 6 |
 | **Burnout Minimizer** | ✅ Done | Debate: session-length caps, cognitive overload, new-content ratio, stress signals, motivation trend | 6 |
 | **Debate Arbitrator** | ✅ Done | Contextual perspective weighting (deadline/motivation/anomaly-aware), objection scoring, amendment acceptance | 6 |
+| **RAG Agent** | ✅ Done | Learner-aware retrieval queries, citation grounding, deduplication, mastery/action/prerequisite-aware search | 7 |
 
 ---
 
@@ -306,6 +308,16 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] Reflection Agent updated with Strategic Debate section (10 narrative sections total)
 - [x] 248 passing tests
 
+### Phase 7 — Learner-Aware RAG with Grounding ✅
+- [x] **LocalTfidfIndex** — Full TF-IDF retrieval engine: tokenisation, IDF computation, cosine similarity ranking, metadata filtering, JSON disk persistence
+- [x] **AzureAISearchIndex** — Graceful Azure AI Search stub (no-op when SDK not installed, ready for Phase 9)
+- [x] **RAGAgent** — Learner-aware retrieval: mastery-level query framing, action-type modifiers, difficulty awareness, prerequisite enrichment, deduplication, min-score filtering
+- [x] `create_retrieval_index()` factory with config-driven backend selection (local TF-IDF / Azure AI Search)
+- [x] GPS Engine integration: RAG step post-debate, citations flow into `NextBestAction.citations`
+- [x] Reflection Agent updated with Supporting Material section (11 sections total)
+- [x] 16-agent pipeline: Event → Diagnose → Drift → Motivate → SkillState → Behavior → Decay → Replay → TimeOpt → Plan+Check → Debate → RAG → HITL → Reflect → Action
+- [x] 290 passing tests
+
 ---
 
 ## Known Limitations
@@ -314,8 +326,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - EventBus is in-process only (no distributed messaging)
 - Storage is local JSON files only (Azure stubs are no-ops until SDK is configured)
 - Pipeline ordering is static (adaptive routing in Phase 8)
-- No FastAPI server yet (Phase 7+)
-- RAG subsystem not yet implemented (Phase 7)
+- No FastAPI server yet (Phase 8+)
 
 ---
 
@@ -327,7 +338,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] **Phase 4:** Specialized agents (Skill State, Behavior, Time Optimizer, Reflection)
 - [x] **Phase 5:** Continual learning (Decay Agent, Generative Replay)
 - [x] **Phase 6:** Strategic debate system
-- [ ] **Phase 7:** Learner-aware RAG with grounding
+- [x] **Phase 7:** Learner-aware RAG with grounding
 - [ ] **Phase 8:** Competitive differentiators (Adaptive Routing, Confidence Weighting)
 - [ ] **Phase 9:** Azure deployment scaffolding
 - [ ] **Phase 10:** Evaluation harness + documentation completion

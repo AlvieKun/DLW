@@ -15,6 +15,7 @@ from learning_navigator.agents.evaluator import EvaluatorAgent
 from learning_navigator.agents.generative_replay import GenerativeReplayAgent
 from learning_navigator.agents.motivation import MotivationAgent
 from learning_navigator.agents.planner import PlannerAgent
+from learning_navigator.agents.rag_agent import RAGAgent
 from learning_navigator.agents.reflection import ReflectionAgent
 from learning_navigator.agents.skill_state import SkillStateAgent
 from learning_navigator.agents.time_optimizer import TimeOptimizerAgent
@@ -33,6 +34,7 @@ __all__ = [
     "MasteryMaximizer",
     "MotivationAgent",
     "PlannerAgent",
+    "RAGAgent",
     "ReflectionAgent",
     "SkillStateAgent",
     "TimeOptimizerAgent",

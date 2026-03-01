@@ -286,19 +286,49 @@ Pure string construction from pre-computed data. No network calls, no LLM tokens
 ## 9. RAG Subsystem
 
 ### Why Chosen
-<!-- Phase 7: Fill in when implemented -->
+Retrieval-Augmented Generation (RAG) grounds the system's recommendations in concrete supporting material from a knowledge base, rather than relying solely on agent heuristics. The key innovation is **learner-aware query construction**: queries are not just raw concept names, but contextually enriched based on:
+
+- **Mastery level** — beginner learners get introductory/basics queries; advanced learners get deep-dive/application queries
+- **Recommended action** — `learn_new` → tutorials; `practice` → exercises; `spaced_review` → summaries/flashcards
+- **Difficulty awareness** — high-difficulty concepts get "simplified step by step" modifiers
+- **Prerequisite gaps** — if weak prerequisites exist, queries include prerequisite material
+
+This ensures retrieved content matches *where the learner is*, not just *what the topic is*.
+
+The architecture uses a `RetrievalIndex` abstraction with two implementations:
+- **LocalTfidfIndex** — full TF-IDF engine for local development (tokenisation, IDF computation, cosine similarity, metadata filtering, JSON persistence)
+- **AzureAISearchIndex** — graceful stub for Azure AI Search (no-op when SDK not available, ready for Phase 9 deployment)
 
 ### Alternatives Considered
-<!-- Phase 7 -->
+| Alternative | Why Rejected |
+|---|---|
+| Fixed content mapping (concept → document) | No relevance ranking, no learner awareness, doesn't scale |
+| Embedding-based vector search only | Requires embedding model infrastructure; TF-IDF is sufficient for v1 and adds zero external dependency |
+| No retrieval (pure rule-based) | Recommendations lack grounding; users can't see *why* or reference supporting material |
+| Full semantic search with LLM reranking | Expensive, adds latency, overkill for deterministic v1 system |
 
 ### Failure Modes
-<!-- Phase 7 -->
+| Failure | Mitigation |
+|---|---|
+| Empty knowledge base | RAG step is optional — engine works without retrieval index; empty citations list is valid |
+| Low-relevance results | Min-score filtering (configurable threshold) + result deduplication |
+| Query drift (irrelevant modifiers) | Queries are deterministic and testable; each modifier is unit-tested |
+| Duplicate citations across concepts | Deduplication by doc_id, keeping highest-scoring entry |
+| Azure SDK not installed | AzureAISearchIndex gracefully degrades to no-op with structured logging |
 
 ### Trust / Explainability Impact
-<!-- Phase 7 -->
+Citations flow through the system in three ways:
+1. **NextBestAction.citations** — doc_id keys attached to every recommendation, enabling frontend "why?" explanations
+2. **Reflection Agent "Supporting Material" section** — human-readable narrative listing top citations with scores and snippets
+3. **Debug trace** — RAG pipeline step logged with query count and citation count for observability
+
+This creates a verifiable chain: learner state → learner-aware query → retrieved document → citation key → recommendation. Users and reviewers can trace exactly which material supports each recommendation.
 
 ### Computational Tradeoffs
-<!-- Phase 7 -->
+- **LocalTfidfIndex**: O(n) search per query (full scan with cosine similarity). Acceptable for knowledge bases up to ~10K documents. IDF recomputation is lazy (only when corpus changes). Disk persistence via JSON adds ~50ms per write.
+- **Per-turn cost**: One search per plan recommendation concept (typically 2-5 concepts × top_k=3 results). Total: ~5-15 similarity computations per turn.
+- **Memory footprint**: TF-IDF vectors stored in-memory for fast retrieval; disk used only for persistence between restarts.
+- The RAG step is skipped entirely when no retrieval_index is provided, adding zero overhead for users who don't need retrieval.
 
 ---
 

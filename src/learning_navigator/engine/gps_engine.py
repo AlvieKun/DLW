@@ -39,6 +39,7 @@ from learning_navigator.agents.evaluator import EvaluatorAgent
 from learning_navigator.agents.generative_replay import GenerativeReplayAgent
 from learning_navigator.agents.motivation import MotivationAgent
 from learning_navigator.agents.planner import PlannerAgent
+from learning_navigator.agents.rag_agent import RAGAgent
 from learning_navigator.agents.reflection import ReflectionAgent
 from learning_navigator.agents.skill_state import SkillStateAgent
 from learning_navigator.agents.time_optimizer import TimeOptimizerAgent
@@ -60,7 +61,11 @@ from learning_navigator.engine.maker_checker import (
     CheckVerdict,
     MakerChecker,
 )
-from learning_navigator.storage.interfaces import MemoryStore, PortfolioLogger
+from learning_navigator.storage.interfaces import (
+    MemoryStore,
+    PortfolioLogger,
+    RetrievalIndex,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -74,6 +79,7 @@ class LearningGPSEngine:
         portfolio_logger: PortfolioLogger,
         event_bus: EventBus,
         hitl_hook: HITLHook | None = None,
+        retrieval_index: RetrievalIndex | None = None,
         confidence_threshold: float = 0.6,
         maker_checker_rounds: int = 2,
         debate_enabled: bool = True,
@@ -97,6 +103,12 @@ class LearningGPSEngine:
         self.decay = DecayAgent()
         self.generative_replay = GenerativeReplayAgent()
         self.reflection = ReflectionAgent()
+
+        # RAG retrieval (optional — disabled when no index provided)
+        self._retrieval_index = retrieval_index
+        self.rag_agent: RAGAgent | None = (
+            RAGAgent(retrieval_index) if retrieval_index else None
+        )
 
         # Debate advocates + arbitrator
         self.mastery_maximizer = MasteryMaximizer()
@@ -245,6 +257,18 @@ class LearningGPSEngine:
             "alignment": debate_result.overall_alignment,
         })
 
+        # 5c. RAG retrieval — ground plan recommendations with citations
+        rag_response: dict[str, Any] = {}
+        if self.rag_agent is not None:
+            rag_response = await self._run_rag(
+                state, mc_result.maker_response, diagnosis
+            )
+            debug_trace["pipeline_steps"].append({
+                "agent": "rag",
+                "citations": rag_response.get("citation_count", 0),
+                "queries": rag_response.get("query_count", 0),
+            })
+
         # 6. HITL check
         hitl_decision = await self._run_hitl(
             state, mc_result.maker_response, mc_result
@@ -261,6 +285,7 @@ class LearningGPSEngine:
             mc_result.maker_response, skill_response, behavior_response,
             time_response, decay_response, replay_response,
             debate_result=debate_result,
+            rag_response=rag_response,
         )
         debug_trace["pipeline_steps"].append({
             "agent": "reflection",
@@ -272,7 +297,8 @@ class LearningGPSEngine:
 
         # 9. Build and return NextBestAction
         nba = self._build_next_best_action(
-            event, mc_result, debug_trace, hitl_decision
+            event, mc_result, debug_trace, hitl_decision,
+            rag_response=rag_response,
         )
 
         # 10. Log to portfolio
@@ -423,6 +449,27 @@ class LearningGPSEngine:
         resp = await self.generative_replay.handle(msg)
         return resp.payload
 
+    async def _run_rag(
+        self,
+        state: LearnerState,
+        plan: dict[str, Any],
+        diagnosis: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Run the RAG agent to retrieve grounded citations."""
+        assert self.rag_agent is not None
+        msg = MessageEnvelope(
+            message_type=MessageType.RAG_QUERY,
+            source_agent_id="engine",
+            target_agent_id="rag-agent",
+            payload={
+                "learner_state": state.model_dump(mode="json"),
+                "plan": plan,
+                "diagnosis": diagnosis,
+            },
+        )
+        resp = await self.rag_agent.handle(msg)
+        return resp.payload
+
     async def _run_reflection(
         self,
         state: LearnerState,
@@ -436,6 +483,7 @@ class LearningGPSEngine:
         decay_response: dict[str, Any] | None = None,
         replay_response: dict[str, Any] | None = None,
         debate_result: DebateResult | None = None,
+        rag_response: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run the reflection agent with full pipeline context."""
         debate_payload: dict[str, Any] = {}
@@ -464,6 +512,7 @@ class LearningGPSEngine:
                 "decay_response": decay_response or {},
                 "replay_response": replay_response or {},
                 "debate_response": debate_payload,
+                "rag_response": rag_response or {},
             },
         )
         resp = await self.reflection.handle(msg)
@@ -540,6 +589,7 @@ class LearningGPSEngine:
         mc_result: Any,
         debug_trace: dict[str, Any],
         hitl_decision: HITLDecision,
+        rag_response: dict[str, Any] | None = None,
     ) -> NextBestAction:
         """Build the final NextBestAction from pipeline results."""
         recommendations = mc_result.maker_response.get("recommendations", [])
@@ -579,6 +629,14 @@ class LearningGPSEngine:
         if mc_result.verdict == CheckVerdict.NEEDS_REVISION:
             confidence = min(confidence, 0.4)
 
+        # Extract citation keys from RAG response
+        citations: list[str] = []
+        if rag_response:
+            for cite in rag_response.get("citations", []):
+                doc_id = cite.get("doc_id", "")
+                if doc_id:
+                    citations.append(doc_id)
+
         return NextBestAction(
             action_id=str(uuid.uuid4())[:8],
             learner_id=event.learner_id,
@@ -587,6 +645,7 @@ class LearningGPSEngine:
             confidence=max(0.0, min(1.0, confidence)),
             expected_learning_gain=min(1.0, top.get("priority_score", 0.5) * 0.15),
             risk_assessment=risk_assessment,
+            citations=citations,
             debug_trace=debug_trace,
         )
 

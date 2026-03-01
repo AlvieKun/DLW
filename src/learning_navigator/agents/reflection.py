@@ -64,6 +64,7 @@ class ReflectionAgent(BaseAgent):
         decay_response = message.payload.get("decay_response", {})
         replay_response = message.payload.get("replay_response", {})
         debate_response = message.payload.get("debate_response", {})
+        rag_response = message.payload.get("rag_response", {})
 
         log = logger.bind(agent=self.agent_id, learner_id=state.learner_id)
         log.info("reflection.start")
@@ -81,6 +82,7 @@ class ReflectionAgent(BaseAgent):
         sections.append(self._plan_section(plan_response, time_response))
         sections.append(self._skill_graph_section(skill_state_response))
         sections.append(self._debate_section(debate_response))
+        sections.append(self._rag_grounding_section(rag_response))
         sections.append(self._outlook_section(state))
 
         # Filter empty sections
@@ -354,6 +356,34 @@ class ReflectionAgent(BaseAgent):
             lines.append(f"{len(amendments)} amendment{'s' if len(amendments) != 1 else ''} applied to the plan.")
 
         return {"title": "Strategic Debate", "content": "\n".join(lines)}
+
+    @staticmethod
+    def _rag_grounding_section(rag_response: dict[str, Any]) -> dict[str, str]:
+        """Summarise RAG citations grounding the recommendations."""
+        citations = rag_response.get("citations", [])
+        query_count = rag_response.get("query_count", 0)
+        if not citations:
+            return {"title": "Supporting Material", "content": ""}
+
+        lines: list[str] = [
+            f"Found {len(citations)} supporting reference{'s' if len(citations) != 1 else ''} "
+            f"from {query_count} learner-aware {'queries' if query_count != 1 else 'query'}.",
+        ]
+
+        for cite in citations[:5]:  # cap display at 5
+            doc_id = cite.get("doc_id", "unknown")
+            score = cite.get("score", 0.0)
+            concept = cite.get("concept_id", "")
+            snippet = cite.get("content", "")[:120]
+            label = f"[{doc_id}] (score {score:.2f})"
+            if concept:
+                label += f" for {concept}"
+            lines.append(f"- {label}: {snippet}{'...' if len(cite.get('content', '')) > 120 else ''}")
+
+        if len(citations) > 5:
+            lines.append(f"  ...and {len(citations) - 5} more.")
+
+        return {"title": "Supporting Material", "content": "\n".join(lines)}
 
     @staticmethod
     def _outlook_section(state: LearnerState) -> dict[str, str]:
