@@ -22,6 +22,7 @@
 13. [Competitive Differentiator: Adaptive Agent Routing](#13-competitive-differentiator-adaptive-agent-routing)
 14. [Competitive Differentiator: Dynamic Agent Confidence Weighting](#14-competitive-differentiator-dynamic-agent-confidence-weighting)
 15. [Azure Integration + Event-Driven Consolidation](#15-azure-integration--event-driven-consolidation)
+16. [Evaluation Harness — Scenario-Driven Quality Assessment](#16-evaluation-harness--scenario-driven-quality-assessment)
 
 ---
 
@@ -522,3 +523,36 @@ The interface abstraction preserves all observability patterns from local develo
 | Scale | Single process | Auto-scale to thousands of concurrent learners |
 
 The async interface uniformity means switching backends requires no code changes — only environment variables.
+
+---
+
+## 16. Evaluation Harness — Scenario-Driven Quality Assessment
+
+### Why Chosen
+Multi-agent systems exhibit emergent behaviour that unit tests alone cannot verify. The evaluation harness provides scenario-driven integration testing: pre-defined learner journeys (multi-step event sequences) are fed through the full GPS Engine pipeline, and the outputs are checked against declarative expectations (confidence bounds, action types, risk flags, pipeline coverage). This bridges the gap between unit tests and production monitoring.
+
+### Alternatives Considered
+| Alternative | Why Rejected |
+|---|---|
+| Manual testing only | Not reproducible, not CI-friendly, doesn't scale with agent count |
+| LLM-as-judge evaluation | Adds non-determinism; inappropriate for v1 rule-based agents |
+| Single-event smoke tests | Misses multi-step interactions (state accumulation, drift detection) |
+| A/B testing in production | Requires production traffic; evaluation harness enables offline quality gates |
+
+### Design
+- **Scenarios**: Dataclass-based `EvalScenario` with typed `ScenarioStep` sequences and `StepExpectation` constraints.
+- **Metrics**: Per-step `StepResult` with pass/fail + failure reasons, aggregated into `QualityMetrics` (per scenario) and `MetricSuite` (whole suite).
+- **Harness**: Instantiates an isolated engine per scenario (no cross-contamination), feeds events sequentially, measures wall-clock latency, collects NBAs.
+- **Report**: Human-readable summary + JSON-serialisable `to_dict()` for CI integration.
+- **CLI**: `learning-nav evaluate [--tag TAG] [--json]` for local and CI execution.
+
+### Failure Modes
+- **Flaky expectations**: Overly tight confidence bounds can break across refactors. Mitigation: expectations focus on ranges and structural properties, not exact values.
+- **Scenario staleness**: Scenarios may not reflect real learner behaviour. Mitigation: tag system for categorisation, easy extensibility via dataclass construction.
+- **Performance regression**: Latency tracking enables detection but thresholds are not enforced in v1.
+
+### Trust / Explainability Impact
+The evaluation report provides a transparent quality gate: every scenario shows pass/fail with specific failure reasons per step. This can be shared with stakeholders (teachers, product owners) as evidence that the system behaves correctly for known learner profiles.
+
+### Computational Tradeoffs
+Running all 8 built-in scenarios (~22 steps total) completes in ~1-2 seconds on commodity hardware. The harness is lightweight enough for CI pipelines and local development iteration.

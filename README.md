@@ -14,12 +14,13 @@
 3. [Agent Catalog](#agent-catalog)
 4. [Setup Instructions](#setup-instructions)
 5. [Local Development Guide](#local-development-guide)
-6. [Azure Deployment Notes](#azure-deployment-notes)
-7. [AI Pattern Justification](#ai-pattern-justification)
-8. [Competitive Differentiators](#competitive-differentiators)
-9. [Current System Capabilities](#current-system-capabilities)
-10. [Known Limitations](#known-limitations)
-11. [Roadmap / TODO](#roadmap--todo)
+6. [Evaluation Harness](#evaluation-harness)
+7. [Azure Deployment Notes](#azure-deployment-notes)
+8. [AI Pattern Justification](#ai-pattern-justification)
+9. [Competitive Differentiators](#competitive-differentiators)
+10. [Current System Capabilities](#current-system-capabilities)
+11. [Known Limitations](#known-limitations)
+12. [Roadmap / TODO](#roadmap--todo)
 
 ---
 
@@ -198,6 +199,70 @@ All settings can be overridden via environment variables prefixed with `LN_`:
 
 ---
 
+## Evaluation Harness
+
+The evaluation harness provides **scenario-driven quality assessment** of the full GPS Engine pipeline. It replays realistic learner journeys and checks output properties.
+
+### Running Evaluations
+
+```bash
+# Run all 8 built-in scenarios
+learning-nav evaluate
+
+# Filter by tag
+learning-nav evaluate --tag safety
+
+# JSON output for CI integration
+learning-nav evaluate --json
+
+# With adaptive routing enabled
+learning-nav evaluate --adaptive-routing
+```
+
+### Built-in Scenarios
+
+| Scenario | Steps | Description | Tags |
+|---|---|---|---|
+| happy-path-progression | 3 | Steady quiz score improvement | core, regression |
+| struggling-learner | 4 | Repeated failures + frustration signal | core, safety |
+| inactivity-drift | 3 | Long gap then return with score drop | core, continual-learning |
+| high-achiever-acceleration | 3 | Consistently excellent scores | core |
+| motivation-crisis | 3 | Motivation collapse requiring gentle recs | core, safety |
+| prerequisite-chain | 3 | Multi-concept dependency enforcement | core, planning |
+| exam-deadline-pressure | 3 | Near-deadline high-stress cramming | core, debate |
+| cold-start | 1 | Brand-new learner, zero history | core, regression |
+
+### Metrics Computed
+
+- **Recommendation quality**: confidence calibration, gain plausibility, action-type coverage
+- **Safety**: risk flag presence/absence, overload detection
+- **Pipeline coverage**: agent participation per step (active vs. skipped)
+- **Latency**: wall-clock time per pipeline run
+- **Consistency**: confidence variance across repeated events
+
+### Custom Scenarios
+
+```python
+from learning_navigator.evaluation.scenarios import EvalScenario, ScenarioStep, StepExpectation
+from learning_navigator.contracts.events import LearnerEventType
+
+custom = EvalScenario(
+    name="my-scenario",
+    description="Custom evaluation",
+    learner_id="my-learner",
+    steps=[
+        ScenarioStep(
+            event_type=LearnerEventType.QUIZ_RESULT,
+            concept_id="my-concept",
+            data={"score": 0.7, "max_score": 1.0},
+            expectation=StepExpectation(min_confidence=0.3),
+        ),
+    ],
+)
+```
+
+---
+
 ## Azure Deployment Notes
 
 The system is designed **local-first with Azure-ready abstractions**:
@@ -364,6 +429,16 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] Config-driven backend selection: `LN_STORAGE_BACKEND=azure_blob`, `LN_SEARCH_BACKEND=azure_ai_search`
 - [x] 400 passing tests
 
+### Phase 10 — Evaluation Harness + Documentation Completion ✅
+- [x] **EvalScenario / ScenarioStep / StepExpectation** — Dataclass-based scenario definitions with typed event sequences and declarative expectation constraints (confidence bounds, action types, risk keys, pipeline coverage)
+- [x] **8 built-in scenarios** — Happy-path, struggling learner, inactivity drift, high achiever, motivation crisis, prerequisite chain, exam deadline, cold start
+- [x] **MetricSuite / QualityMetrics** — Per-step and aggregate metrics: confidence calibration, gain plausibility, pipeline coverage, latency tracking, consistency
+- [x] **EvaluationHarness** — Scenario-driven integration runner: isolated engine per scenario, sequential event feeding, wall-clock latency, structured reporting
+- [x] **EvaluationResult** — Human-readable `summary()` + JSON-serialisable `to_dict()` for CI integration
+- [x] **CLI `evaluate` command** — `learning-nav evaluate [--tag TAG] [--json] [--adaptive-routing]`
+- [x] **Pattern justification** — Section 16: Evaluation Harness design rationale, failure modes, tradeoffs
+- [x] 463+ passing tests
+
 ---
 
 ## Known Limitations
@@ -372,6 +447,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - EventBus is in-process only (no distributed messaging)
 - Azure adapters require SDK + credentials to function (degrade gracefully to no-ops otherwise)
 - Azure Functions consolidation is best-effort (no distributed locking)
+- Evaluation harness scenarios are synthetic — real learner data replay planned for future phase
 
 ---
 
@@ -386,4 +462,4 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] **Phase 7:** Learner-aware RAG with grounding
 - [x] **Phase 8:** Competitive differentiators (Adaptive Routing, Confidence Weighting)
 - [x] **Phase 9:** Azure deployment scaffolding
-- [ ] **Phase 10:** Evaluation harness + documentation completion
+- [x] **Phase 10:** Evaluation harness + documentation completion

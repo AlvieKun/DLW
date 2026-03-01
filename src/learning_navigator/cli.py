@@ -1,7 +1,10 @@
 """CLI entry point for Learning Navigator.
 
 Uses Typer for a clean, typed command-line interface.
-Actual commands will be added in later phases.
+
+Commands:
+- ``run``      — Start the REST API server
+- ``evaluate`` — Run the evaluation harness
 """
 
 from __future__ import annotations
@@ -51,6 +54,43 @@ def run(
         reload=reload,
         log_level=log_level.lower(),
     )
+
+
+@app.command()
+def evaluate(
+    tag: str = typer.Option("", help="Only run scenarios matching this tag (e.g. 'core', 'safety')"),
+    json_output: bool = typer.Option(False, "--json", help="Output results as JSON instead of text"),
+    log_level: str = typer.Option("WARNING", help="Log level (DEBUG, INFO, WARNING, ERROR)"),
+    adaptive_routing: bool = typer.Option(False, help="Enable adaptive routing during eval"),
+) -> None:
+    """Run the evaluation harness against built-in scenarios."""
+    import asyncio
+    import json
+
+    from learning_navigator.evaluation.harness import EvaluationHarness
+    from learning_navigator.evaluation.scenarios import get_all_scenarios, get_scenarios_by_tag
+
+    setup_logging(log_level=log_level, log_format="console")
+
+    scenarios = get_scenarios_by_tag(tag) if tag else get_all_scenarios()
+    if not scenarios:
+        typer.echo(f"No scenarios matching tag '{tag}'", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Running {len(scenarios)} evaluation scenario(s) ...")
+
+    harness = EvaluationHarness(
+        scenarios=scenarios,
+        adaptive_routing_enabled=adaptive_routing,
+    )
+    result = asyncio.run(harness.run_all())
+
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), indent=2))
+    else:
+        typer.echo(result.summary())
+
+    raise typer.Exit(code=0 if result.all_passed else 1)
 
 
 if __name__ == "__main__":

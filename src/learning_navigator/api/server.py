@@ -23,6 +23,7 @@ from typing import Any
 
 import structlog
 from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from learning_navigator import __version__
@@ -103,6 +104,12 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+
+
+@app.get("/", include_in_schema=False)
+async def root() -> RedirectResponse:
+    """Redirect root to interactive API docs."""
+    return RedirectResponse(url="/docs")
 
 
 # ── Request / Response models ──────────────────────────────────────
