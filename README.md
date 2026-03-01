@@ -105,11 +105,14 @@ Learning Navigator is a **production-grade multi-agent AI system** designed to g
 
 | Agent | Status | Capabilities | Phase |
 |---|---|---|---|
-| **Diagnoser** | 🔲 Planned | Assess learner state from events | 3 |
-| **Drift Detector** | 🔲 Planned | Detect learning drift / off-track signals | 3 |
-| **Motivation Agent** | 🔲 Planned | Infer motivation level + trend | 3 |
-| **Planner Agent** | 🔲 Planned | Generate study plan recommendations | 3 |
-| **Evaluator Agent** | 🔲 Planned | Evaluate plan quality + learning outcomes | 3 |
+| **Diagnoser** | ✅ Done | BKT updates from quiz/time events, spacing history, weak-concept flagging | 3 |
+| **Drift Detector** | ✅ Done | 5 drift types: inactivity, plateau, easy-mismatch, disengagement, priority-neglect | 3 |
+| **Motivation Agent** | ✅ Done | 4-signal motivation inference (frequency, consistency, mastery trend, sentiment) | 3 |
+| **Planner Agent** | ✅ Done | Priority-ranked study plans with motivation-adaptive session lengths | 3 |
+| **Evaluator Agent** | ✅ Done | 6-check plan quality: prereq violation, overload, cognitive load, empty plan, time, priority | 3 |
+| **Maker–Checker** | ✅ Done | Maker→Checker loop with configurable rounds and min quality score | 3 |
+| **HITL Hooks** | ✅ Done | Pluggable human-in-the-loop review with auto-approve threshold | 3 |
+| **Learning GPS Engine** | ✅ Done | Full pipeline orchestrator: Event → Diagnose → Drift → Motivate → Plan → Check → HITL → Action | 3 |
 | **Skill State Agent** | 🔲 Planned | BKT mastery tracking + knowledge graph | 4 |
 | **Behavior Agent** | 🔲 Planned | Pattern anomaly detection | 4 |
 | **Time Optimizer** | 🔲 Planned | Constrained time allocation optimization | 4 |
@@ -119,7 +122,6 @@ Learning Navigator is a **production-grade multi-agent AI system** designed to g
 | **Mastery Maximizer** | 🔲 Planned | Debate: maximize deep understanding | 6 |
 | **Exam Strategist** | 🔲 Planned | Debate: maximize exam performance | 6 |
 | **Burnout Minimizer** | 🔲 Planned | Debate: minimize overload risk | 6 |
-| **Maker–Checker** | 🔲 Planned | Validate recommendations + adversarial audit | 3 |
 
 ---
 
@@ -257,14 +259,30 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 - [x] Storage factory functions with config-driven backend selection
 - [x] 78 passing tests
 
+### Phase 3 — Core Agents v1 + Orchestrator ✅
+- [x] **DiagnoserAgent** — BKT updates from quiz/time-on-task events, spacing history, weak-concept flags
+- [x] **DriftDetectorAgent** — 5 drift types: inactivity, mastery plateau, difficulty mismatch, disengagement, priority neglect
+- [x] **MotivationAgent** — 4-signal weighted motivation inference with level/score/trend/confidence
+- [x] **PlannerAgent** — Priority-ranked recommendations with motivation-adaptive session lengths
+- [x] **EvaluatorAgent** — 6-check plan quality validation (prerequisite, overload, cognitive, empty, time, priority)
+- [x] **Maker-Checker subsystem** — Iterative make→check loop with configurable rounds and quality threshold
+- [x] **HITL hooks** — Pluggable human-in-the-loop review with auto-approve threshold and audit log
+- [x] **Learning GPS Engine** — Full pipeline orchestrator: Event → Diagnose → Drift → Motivate → Plan+Check → HITL → NextBestAction
+- [x] State persistence across events with automatic learner creation
+- [x] Portfolio audit logging for every recommendation
+- [x] EventBus telemetry integration
+- [x] Debug trace in NextBestAction output
+- [x] 132 passing tests
+
 ---
 
 ## Known Limitations
 
-- No actual LLM integration yet — agents are rule-based / stubbed (by design for v1 local-first)
+- No actual LLM integration yet — agents are rule-based / deterministic (by design for v1 local-first)
 - EventBus is in-process only (no distributed messaging)
 - Storage is local JSON files only (Azure stubs are no-ops until SDK is configured)
-- No FastAPI server yet (Phase 3)
+- Pipeline ordering is static (adaptive routing in Phase 8)
+- No FastAPI server yet (Phase 4+)
 - RAG subsystem not yet implemented (Phase 7)
 
 ---
@@ -273,7 +291,7 @@ Each agent self-reports confidence with calibration metadata. The orchestrator t
 
 - [x] **Phase 1:** Repo bootstrap + architecture skeleton
 - [x] **Phase 2:** Learner state core + storage abstractions
-- [ ] **Phase 3:** Core agents v1 (Diagnoser, Drift, Motivation, Planner, Evaluator, Maker-Checker)
+- [x] **Phase 3:** Core agents v1 + Maker-Checker + HITL + GPS Engine orchestrator
 - [ ] **Phase 4:** Specialized agents (Skill State, Behavior, Time Optimizer, Reflection)
 - [ ] **Phase 5:** Continual learning (Decay Agent, Generative Replay)
 - [ ] **Phase 6:** Strategic debate system

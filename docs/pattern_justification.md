@@ -89,19 +89,33 @@ BKT update is O(1) per observation — negligible. State serialization is O(n) w
 ## 3. Core Agents
 
 ### Why Chosen
-<!-- Phase 3: Fill in when implemented -->
+Five specialized agents implement the v1 pipeline: **Diagnoser** (BKT updates + event interpretation), **Drift Detector** (5 learning-drift heuristics), **Motivation Agent** (4-signal weighted inference), **Planner** (priority-ranked recommendations with motivation-adaptive session lengths), and **Evaluator** (6-check quality gate). Each agent is deterministic and rule-based for v1 — no LLM dependency — ensuring reproducibility, testability, and zero-cost inference.
+
+The separation into five agents (rather than one monolithic "tutor" agent) provides:
+- **Single responsibility**: Each agent's logic can be tested, iterated, and replaced independently.
+- **Composability**: The pipeline order can be rearranged (Phase 8: adaptive routing) without rewriting agent internals.
+- **Cost tiers**: Diagnoser/DriftDetector/Motivation are cost-tier-1 (fast heuristics); Planner/Evaluator are cost-tier-2 (more complex reasoning). This enables future cost-aware routing.
 
 ### Alternatives Considered
-<!-- Phase 3 -->
+| Alternative | Why Rejected |
+|---|---|
+| Single LLM-powered tutor | Expensive, non-deterministic, impossible to unit-test individual reasoning steps |
+| Two-agent (diagnose + plan) | Conflates drift detection, motivation tracking, and quality evaluation into oversized agents |
+| LLM-backed rule agents | Adds latency + cost for deterministic logic that can be implemented directly |
+| Stateless agents (no LearnerState) | Agents need historical context (spacing history, practice count) for accurate recommendations |
 
 ### Failure Modes
-<!-- Phase 3 -->
+- **BKT parameter bias**: Default `p_slip`/`p_guess` may not match real learner populations. Mitigation: per-concept parameter overrides; future cohort meta-learning.
+- **Drift false positives**: Inactivity threshold too aggressive → normal weekends flagged. Mitigation: configurable `inactivity_threshold_hours` parameter (default 48h).
+- **Motivation signal starvation**: New learners have no history → motivation defaults to MEDIUM. Mitigation: explicit default + confidence score reflects signal count.
+- **Planner generates empty plan**: Learner has no concepts yet. Mitigation: Evaluator catches `empty_plan` issue; engine still produces a valid NextBestAction with fallback.
+- **Evaluator too strict/lenient**: Fixed quality thresholds may not fit all contexts. Mitigation: configurable via Maker-Checker `min_quality_score`.
 
 ### Trust / Explainability Impact
-<!-- Phase 3 -->
+Every agent returns a `rationale` field explaining its reasoning in natural language. The Diagnoser lists which concepts were updated and by how much. The Planner explains why each concept was prioritized. The Evaluator lists specific quality issues found. All of this feeds into the NextBestAction `debug_trace`, making the system fully inspectable.
 
 ### Computational Tradeoffs
-<!-- Phase 3 -->
+All agents are O(n) where n = number of concepts in the learner's state (typically 10–1000). No network calls, no GPU, no LLM tokens. A full pipeline tick completes in <10ms on commodity hardware. This makes the system suitable for real-time response even on mobile backends.
 
 ---
 
@@ -222,38 +236,64 @@ BKT update is O(1) per observation — negligible. State serialization is O(n) w
 ## 10. Maker–Checker Validation + Adversarial Auditing
 
 ### Why Chosen
-<!-- Phase 3: Fill in when implemented -->
+The Maker-Checker pattern separates plan generation (Planner = maker) from plan validation (Evaluator = checker), creating a feedback loop that catches quality issues before recommendations reach the learner. The implementation supports configurable `max_rounds` (default 3) and `min_quality_score` (default 0.5), allowing the system to iterate until quality is acceptable or the budget is exhausted.
+
+This pattern is well-established in financial systems and content moderation. In education, it prevents:
+- Recommending content that violates prerequisite ordering
+- Overloading demotivated learners with long sessions
+- Cognitive overload from too many new concepts at once
+- Empty or degenerate plans
 
 ### Alternatives Considered
-<!-- Phase 3 -->
+| Alternative | Why Rejected |
+|---|---|
+| Single-pass planning (no checker) | No quality gate — bad plans go directly to learners |
+| LLM-as-judge | Expensive, non-deterministic, requires prompt engineering for each quality criterion |
+| Ensemble voting (multiple planners) | Heavier — v1 doesn't need multiple planning strategies yet (that's Phase 6 debate) |
+| Post-hoc logging only | Catches issues too late — learner already received the bad recommendation |
 
 ### Failure Modes
-<!-- Phase 3 -->
+- **Infinite rejection loop**: Evaluator always rejects → Planner can't satisfy criteria. Mitigation: hard `max_rounds` limit; last round's result is used even if imperfect.
+- **Evaluator too lenient**: Low `min_quality_score` lets bad plans through. Mitigation: configurable threshold per deployment; HITL layer provides second check.
+- **Evaluator-Planner collusion**: Both agents agree on bad plans. Mitigation: Evaluator checks are orthogonal to Planner logic; adversarial auditing (future) adds independent verification.
 
 ### Trust / Explainability Impact
-<!-- Phase 3 -->
+The `MakerCheckerResult` includes full audit trail: number of rounds, maker/checker responses per round, final verdict, and quality score. This is logged to the portfolio and available in the debug trace. Educators can see *why* a plan was approved or revised, and how many iterations were needed.
 
 ### Computational Tradeoffs
-<!-- Phase 3 -->
+Each round adds one Planner + one Evaluator invocation. With deterministic agents, this is <5ms per round. Typical convergence is 1 round (plan quality is usually acceptable on first pass). Worst case is `max_rounds` iterations — still <15ms total.
 
 ---
 
 ## 11. Human-in-the-Loop Hooks
 
 ### Why Chosen
-<!-- Phase 3: Fill in when implemented -->
+The HITL subsystem provides a pluggable review layer between the Maker-Checker output and the final recommendation. The `HITLHook` abstract interface allows different review policies (auto-approve, strict review, escalation) without changing engine code. The default implementation uses a quality-score threshold: plans above the threshold are auto-approved, below it trigger human review.
+
+Design choices:
+- **Pluggable interface** (`HITLHook` ABC): Allows custom policies for different deployments (classroom vs self-study vs enterprise).
+- **`should_require_review()` + `request_review()`** two-step API: First decides if review is needed (cheap), then performs the review (potentially blocking). This allows policies that combine quality score, error presence, and domain-specific rules.
+- **Audit log** (`review_log`): Every HITL decision is logged with timestamp, quality score, decision, and reasoning. Supports compliance and teaching team oversight.
+- **Decision enum** (APPROVE, REJECT, MODIFY, ESCALATE, AUTO_APPROVED): Rich decision vocabulary allows nuanced human feedback.
 
 ### Alternatives Considered
-<!-- Phase 3 -->
+| Alternative | Why Rejected |
+|---|---|
+| No HITL (fully autonomous) | Unacceptable for educational contexts where teacher oversight is required |
+| Mandatory review for every recommendation | Doesn't scale — HITL should be triggered by risk signals, not on every turn |
+| External review service (webhook) | Over-engineering for v1; interface supports this as a future adapter |
+| LLM-based auto-review | Adds cost and non-determinism to a quality gate that should be predictable |
 
 ### Failure Modes
-<!-- Phase 3 -->
+- **Auto-approve threshold too permissive**: Bad plans slip through. Mitigation: threshold is configurable; `require_review_on_errors=True` escalates any plan with evaluator-flagged issues.
+- **HITL bottleneck**: If human review is required for many plans, throughput drops. Mitigation: quality threshold can be tuned; majority of plans should auto-approve in a well-configured system.
+- **Stale review**: Human reviews a plan after learner context has changed. Mitigation: future timestamp-based expiry on review requests.
 
 ### Trust / Explainability Impact
-<!-- Phase 3 -->
+HITL is the primary trust mechanism for educator-facing deployments. Teachers can see every recommendation before it reaches learners, override decisions, and provide feedback that improves future plans. The audit log provides full accountability.
 
 ### Computational Tradeoffs
-<!-- Phase 3 -->
+Auto-approve path: ~0ms (threshold comparison). Human review path: latency depends on response time. The engine is designed to be fully async, so HITL review doesn't block other learners' processing.
 
 ---
 

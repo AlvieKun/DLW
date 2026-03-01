@@ -39,9 +39,12 @@ class MessageType(str, Enum):
     DIAGNOSIS_RESULT = "diagnosis_result"
     DRIFT_ALERT = "drift_alert"
     MOTIVATION_SIGNAL = "motivation_signal"
+    MOTIVATION_UPDATE = "motivation_update"
 
     # Planning & debate
     PLAN_PROPOSAL = "plan_proposal"
+    PLAN_READY = "plan_ready"
+    PLAN_REVIEW = "plan_review"
     PLAN_CRITIQUE = "plan_critique"
     ARBITRATION_RESULT = "arbitration_result"
     EVALUATION_RESULT = "evaluation_result"
@@ -61,6 +64,9 @@ class MessageType(str, Enum):
     # Human-in-the-loop
     HITL_OVERRIDE = "hitl_override"
     HITL_EXPLANATION = "hitl_explanation"
+
+    # Engine output
+    ACTION_RECOMMENDED = "action_recommended"
 
     # Generic extensibility
     CUSTOM = "custom"
