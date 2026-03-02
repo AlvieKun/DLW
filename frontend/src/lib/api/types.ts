@@ -19,6 +19,34 @@ export interface EventRequest {
   data?: Record<string, unknown>;
 }
 
+export interface ExplainabilityFactor {
+  agent_id: string;
+  agent_name: string;
+  signal: string;
+  evidence: string;
+  confidence?: number | null;
+}
+
+export interface DecisionTrace {
+  ran_agents: string[];
+  skipped_agents: string[];
+  debate_outcome?: Record<string, unknown> | null;
+  maker_checker?: Record<string, unknown> | null;
+}
+
+export interface Explainability {
+  top_factors: ExplainabilityFactor[];
+  decision_trace: DecisionTrace;
+}
+
+export interface ExpectedImpact {
+  mastery_gain_estimate?: number | null;
+  confidence_gain_estimate?: number | null;
+  risk_reduction: Record<string, number>;
+  time_horizon_days?: number | null;
+  assumptions: string[];
+}
+
 export interface NextBestAction {
   action_id: string;
   learner_id: string;
@@ -29,6 +57,8 @@ export interface NextBestAction {
   risk_assessment: Record<string, number>;
   citations: string[];
   debug_trace: Record<string, unknown>;
+  explainability: Explainability;
+  expected_impact: ExpectedImpact;
   timestamp: string;
 }
 

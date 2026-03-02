@@ -24,6 +24,8 @@ import {
   Flame,
   Repeat,
   Users,
+  HelpCircle,
+  Info,
 } from "lucide-react";
 import {
   Card,
@@ -369,6 +371,12 @@ function GuidanceCard({
           />
         ))}
       </div>
+
+      {/* Expected Impact Card */}
+      <ExpectedImpactCard nba={nba} />
+
+      {/* Why this recommendation? */}
+      <WhyThisPanel nba={nba} />
     </Card>
   );
 }
@@ -391,6 +399,183 @@ function MiniStat({
     <div className="text-center">
       <p className={cn("text-sm font-bold", colors[variant])}>{value}</p>
       <p className="text-[10px] text-[var(--muted-foreground)]">{label}</p>
+    </div>
+  );
+}
+
+// ── "Why this recommendation?" Panel ──────────────────────────────
+function WhyThisPanel({ nba }: { nba: NextBestAction | null }) {
+  const [open, setOpen] = useState(false);
+  const [behindScenes, setBehindScenes] = useState(false);
+
+  const explainability = nba?.explainability;
+  if (!explainability || !explainability.top_factors?.length) return null;
+
+  const factors = explainability.top_factors.slice(0, 6);
+  const trace = explainability.decision_trace;
+
+  return (
+    <div className="border-t border-[var(--border)] pt-3 mt-1">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 text-xs font-medium text-[var(--primary)] hover:opacity-80 transition-opacity w-full"
+      >
+        <HelpCircle className="w-3.5 h-3.5" />
+        Why this recommendation?
+        {open ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="pt-3 space-y-3">
+              {/* Top contributing factors */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Top contributing factors
+                </p>
+                {factors.map((f, i) => {
+                  const visual = getAgentFriendly(f.agent_name);
+                  return (
+                    <div key={`${f.agent_id}-${i}`} className="flex items-start gap-2">
+                      <div className={cn("shrink-0 mt-0.5", visual.color)}>
+                        {visual.icon}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium">{visual.label}</p>
+                        <p className="text-[11px] text-[var(--muted-foreground)] leading-relaxed">
+                          {f.evidence}
+                        </p>
+                      </div>
+                      {f.confidence != null && (
+                        <Badge className={cn("shrink-0 ml-auto", confidenceBadge(f.confidence))}>
+                          {pct(f.confidence)}
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Behind the scenes */}
+              {trace && (
+                <div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setBehindScenes(!behindScenes); }}
+                    className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                  >
+                    <Eye className="w-3 h-3" />
+                    Behind the scenes
+                    {behindScenes ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                  <AnimatePresence>
+                    {behindScenes && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="pt-2 space-y-2 text-[11px] text-[var(--muted-foreground)]">
+                          {trace.ran_agents?.length > 0 && (
+                            <div>
+                              <span className="font-medium text-[var(--foreground)]">Agents that ran: </span>
+                              <span>{trace.ran_agents.join(", ")}</span>
+                            </div>
+                          )}
+                          {trace.skipped_agents?.length > 0 && (
+                            <div>
+                              <span className="font-medium text-[var(--foreground)]">Skipped: </span>
+                              <span>{trace.skipped_agents.join(", ")}</span>
+                            </div>
+                          )}
+                          {trace.debate_outcome && (
+                            <div>
+                              <span className="font-medium text-[var(--foreground)]">Debate: </span>
+                              <span>
+                                {(trace.debate_outcome as Record<string, unknown>).outcome as string ?? "completed"}{" "}
+                                (alignment: {pct(Number((trace.debate_outcome as Record<string, unknown>).alignment ?? 0))})
+                              </span>
+                            </div>
+                          )}
+                          {trace.maker_checker && (
+                            <div>
+                              <span className="font-medium text-[var(--foreground)]">Quality check: </span>
+                              <span>
+                                {(trace.maker_checker as Record<string, unknown>).verdict as string ?? "passed"}{" "}
+                                ({(trace.maker_checker as Record<string, unknown>).rounds as number ?? 1} round{((trace.maker_checker as Record<string, unknown>).rounds as number ?? 1) > 1 ? "s" : ""})
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Expected Impact Card ──────────────────────────────────────────
+function ExpectedImpactCard({ nba }: { nba: NextBestAction | null }) {
+  const impact = nba?.expected_impact;
+  if (!impact) return null;
+
+  const hasNumericData = impact.mastery_gain_estimate != null || Object.keys(impact.risk_reduction).length > 0;
+  const horizon = impact.time_horizon_days ?? 7;
+
+  return (
+    <div className="rounded-lg bg-[var(--muted)]/30 border border-[var(--border)] p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+          Expected impact ({horizon} days)
+        </p>
+        {impact.assumptions.length > 0 && (
+          <div className="group relative">
+            <Info className="w-3.5 h-3.5 text-[var(--muted-foreground)] cursor-help" />
+            <div className="absolute right-0 bottom-full mb-1 w-56 p-2 rounded-lg bg-[var(--card)] border border-[var(--border)] shadow-lg text-[10px] text-[var(--muted-foreground)] invisible group-hover:visible z-10">
+              <p className="font-medium mb-1">Assumptions:</p>
+              <ul className="space-y-0.5 list-disc list-inside">
+                {impact.assumptions.map((a, i) => (
+                  <li key={i}>{a}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+      {hasNumericData ? (
+        <div className="flex flex-wrap gap-3">
+          {impact.mastery_gain_estimate != null && (
+            <MiniStat
+              label="Mastery gain"
+              value={`~+${pct(impact.mastery_gain_estimate)}`}
+              variant="success"
+            />
+          )}
+          {Object.entries(impact.risk_reduction).map(([k, v]) => (
+            <MiniStat
+              key={k}
+              label={`${k.charAt(0).toUpperCase() + k.slice(1)} risk \u2193`}
+              value={`-${pct(v)}`}
+              variant="success"
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-[var(--muted-foreground)] italic">
+          {impact.assumptions[0] || "Not enough data for a numeric estimate yet."}
+        </p>
+      )}
     </div>
   );
 }

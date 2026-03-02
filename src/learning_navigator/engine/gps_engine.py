@@ -393,6 +393,13 @@ class LearningGPSEngine:
         nba = self._build_next_best_action(
             event, mc_result, debug_trace, hitl_decision,
             rag_response=rag_response,
+            state=state,
+            diagnosis=diagnosis,
+            drift_response=drift_response,
+            motivation_response=motivation_response,
+            decay_response=decay_response,
+            time_response=time_response,
+            debate_result=debate_result,
         )
 
         # 9b. Apply confidence calibration
@@ -689,8 +696,22 @@ class LearningGPSEngine:
         debug_trace: dict[str, Any],
         hitl_decision: HITLDecision,
         rag_response: dict[str, Any] | None = None,
+        state: LearnerState | None = None,
+        diagnosis: dict[str, Any] | None = None,
+        drift_response: dict[str, Any] | None = None,
+        motivation_response: dict[str, Any] | None = None,
+        decay_response: dict[str, Any] | None = None,
+        time_response: dict[str, Any] | None = None,
+        debate_result: DebateResult | None = None,
     ) -> NextBestAction:
         """Build the final NextBestAction from pipeline results."""
+        from learning_navigator.contracts.events import (
+            Explainability,
+            ExplainabilityFactor,
+            DecisionTrace,
+            ExpectedImpact,
+        )
+
         recommendations = mc_result.maker_response.get("recommendations", [])
 
         if hitl_decision == HITLDecision.REJECT:
@@ -736,6 +757,162 @@ class LearningGPSEngine:
                 if doc_id:
                     citations.append(doc_id)
 
+        # ── Build explainability from real pipeline signals ──────────
+        top_factors: list[ExplainabilityFactor] = []
+
+        # Factor from Diagnoser: mastery gaps
+        if diagnosis:
+            gap_updates = diagnosis.get("updates", [])
+            if gap_updates:
+                weakest = min(gap_updates, key=lambda u: u.get("new_mastery", 1.0))
+                top_factors.append(ExplainabilityFactor(
+                    agent_id="diagnoser",
+                    agent_name="Diagnoser",
+                    signal="mastery_gap_detected",
+                    evidence=f"Found mastery gap on '{weakest.get('concept_id', 'unknown')}' "
+                             f"(mastery: {weakest.get('new_mastery', 0):.0%})",
+                    confidence=diagnosis.get("confidence", None),
+                ))
+
+        # Factor from Decay: forgetting risk
+        if decay_response and decay_response.get("at_risk_count", 0) > 0:
+            risk_count = decay_response["at_risk_count"]
+            concept_reports = decay_response.get("concept_reports", {})
+            worst_concept = ""
+            worst_score = 0.0
+            for cid, report in concept_reports.items():
+                score = report.get("forgetting_score", 0)
+                if score > worst_score:
+                    worst_score = score
+                    worst_concept = cid
+            evidence = f"Memory Guard flagged {risk_count} topic{'s' if risk_count > 1 else ''} at high review urgency"
+            if worst_concept:
+                evidence += f" (highest: '{worst_concept}' at {worst_score:.0%})"
+            top_factors.append(ExplainabilityFactor(
+                agent_id="decay",
+                agent_name="Decay",
+                signal="high_forgetting_risk",
+                evidence=evidence,
+            ))
+
+        # Factor from Drift Detector
+        if drift_response and drift_response.get("drift_signals"):
+            signals = drift_response["drift_signals"]
+            top_factors.append(ExplainabilityFactor(
+                agent_id="drift-detector",
+                agent_name="Drift Detector",
+                signal="drift_detected",
+                evidence=f"Focus Monitor detected {len(signals)} learning drift signal{'s' if len(signals) > 1 else ''}",
+            ))
+
+        # Factor from Motivation
+        if motivation_response:
+            mot_state = motivation_response.get("motivation_state", {})
+            level = mot_state.get("level", "")
+            if level in ("LOW", "CRITICAL"):
+                top_factors.append(ExplainabilityFactor(
+                    agent_id="motivation",
+                    agent_name="Motivation",
+                    signal="low_motivation",
+                    evidence=f"Motivation Coach detected {level.lower()} motivation — recommendation adjusted for engagement",
+                    confidence=mot_state.get("confidence", None),
+                ))
+
+        # Factor from Time Optimizer
+        if time_response and time_response.get("allocations"):
+            allocs = time_response["allocations"]
+            top_factors.append(ExplainabilityFactor(
+                agent_id="time-optimizer",
+                agent_name="Time Optimizer",
+                signal="time_allocation",
+                evidence=f"Time Optimizer allocated study time across {len(allocs)} topic{'s' if len(allocs) > 1 else ''}",
+            ))
+
+        # Factor from Debate (if it changed the plan)
+        if debate_result and debate_result.accepted_amendments:
+            top_factors.append(ExplainabilityFactor(
+                agent_id="debate-arbitrator",
+                agent_name="Debate Arbitrator",
+                signal="debate_amendment",
+                evidence=f"Strategic debate refined the plan with {len(debate_result.accepted_amendments)} amendment{'s' if len(debate_result.accepted_amendments) > 1 else ''} "
+                         f"(alignment: {debate_result.overall_alignment:.0%})",
+            ))
+
+        # Limit to 6 factors max
+        top_factors = top_factors[:6]
+
+        # Build decision trace from routing info
+        routing_info = debug_trace.get("routing", {})
+        ran_agents = routing_info.get("selected", [])
+        skipped_agents = routing_info.get("skipped", [])
+
+        debate_outcome_trace: dict[str, Any] | None = None
+        if debate_result:
+            debate_outcome_trace = {
+                "outcome": debate_result.outcome.value,
+                "rounds_used": debate_result.rounds_used,
+                "alignment": debate_result.overall_alignment,
+            }
+
+        mc_trace: dict[str, Any] | None = None
+        if mc_result:
+            mc_trace = {
+                "verdict": mc_result.verdict.value,
+                "rounds": mc_result.rounds,
+                "issues": len(mc_result.issues),
+            }
+
+        explainability = Explainability(
+            top_factors=top_factors,
+            decision_trace=DecisionTrace(
+                ran_agents=ran_agents,
+                skipped_agents=skipped_agents,
+                debate_outcome=debate_outcome_trace,
+                maker_checker=mc_trace,
+            ),
+        )
+
+        # ── Build expected_impact from real signals ──────────────────
+        target_concept = top.get("concept_id", "")
+        mastery_gain: float | None = None
+        risk_reduction: dict[str, float] = {}
+        assumptions: list[str] = []
+
+        if state and target_concept:
+            concept = state.get_concept(target_concept)
+            if concept:
+                current_mastery = concept.bkt.p_know
+                # Conservative estimate: one practice session typically moves mastery
+                # by 5-15% depending on current level (diminishing returns)
+                gap = 1.0 - current_mastery
+                mastery_gain = round(min(0.15, gap * 0.2), 3)
+                assumptions.append(
+                    f"Based on current mastery of {current_mastery:.0%} for '{target_concept}'"
+                )
+
+                # Forgetting risk reduction
+                if concept.forgetting_score > 0.3:
+                    reduction = round(concept.forgetting_score * 0.4, 3)
+                    risk_reduction["forgetting"] = reduction
+                    assumptions.append("Spaced review reduces forgetting risk")
+            else:
+                assumptions.append("Insufficient history for numeric estimate")
+        else:
+            assumptions.append("Insufficient history for numeric estimate")
+
+        # Burnout risk reduction if motivation is low
+        if motivation_response:
+            mot_state = motivation_response.get("motivation_state", {})
+            if mot_state.get("level") in ("LOW", "CRITICAL"):
+                assumptions.append("Recommendation accounts for low motivation")
+
+        expected_impact = ExpectedImpact(
+            mastery_gain_estimate=mastery_gain,
+            risk_reduction=risk_reduction if risk_reduction else {},
+            time_horizon_days=7,
+            assumptions=assumptions if assumptions else ["Insufficient history for numeric estimate"],
+        )
+
         return NextBestAction(
             action_id=str(uuid.uuid4())[:8],
             learner_id=event.learner_id,
@@ -746,6 +923,8 @@ class LearningGPSEngine:
             risk_assessment=risk_assessment,
             citations=citations,
             debug_trace=debug_trace,
+            explainability=explainability,
+            expected_impact=expected_impact,
         )
 
     # ── State mutation helpers ──────────────────────────────────────
