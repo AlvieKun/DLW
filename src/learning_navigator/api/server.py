@@ -50,6 +50,10 @@ from learning_navigator.api.auth import get_current_user, get_optional_user
 from learning_navigator.api.auth_db import init_db as init_auth_db
 from learning_navigator.api.auth_routes import router as auth_router
 from learning_navigator.api.agent_diagnostics import get_agents_status, get_system_summary
+from learning_navigator.api.weekly_summary import (
+    generate_weekly_summary,
+    get_latest_summary,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -421,3 +425,102 @@ async def agents_status() -> dict[str, Any]:
         "implemented_agents": summary["implemented"],
         "summary": summary,
     }
+
+
+# ── Weekly AI Summary ──────────────────────────────────────────────
+
+
+@app.get("/api/v1/summary/weekly")
+async def get_weekly_summary(
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Get the latest weekly summary. Generates one if none exists."""
+    from learning_navigator.api.auth_db import get_db as get_auth_db
+    from learning_navigator.llm import get_llm_client
+
+    user_id = user["user_id"]
+
+    # Quick check: if LLM is not configured, return immediately
+    llm = get_llm_client()
+    if not llm.enabled:
+        return {
+            "status": "unavailable",
+            "message": "Weekly AI summary requires Azure OpenAI configuration. "
+                       "Set LN_AZURE_OPENAI_ENDPOINT, LN_AZURE_OPENAI_API_KEY, and "
+                       "LN_AZURE_OPENAI_DEPLOYMENT environment variables.",
+        }
+
+    db = await get_auth_db()
+    try:
+        existing = await get_latest_summary(db, user_id)
+        if existing:
+            return existing
+
+        # No summary exists — generate one
+        return await _generate_summary_for_user(user_id, db)
+    finally:
+        await db.close()
+
+
+@app.post("/api/v1/summary/weekly/generate")
+async def regenerate_weekly_summary(
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Force regeneration of the weekly summary."""
+    from learning_navigator.api.auth_db import get_db as get_auth_db
+    from learning_navigator.llm import get_llm_client
+
+    user_id = user["user_id"]
+
+    llm = get_llm_client()
+    if not llm.enabled:
+        return {
+            "status": "unavailable",
+            "message": "Weekly AI summary requires Azure OpenAI configuration.",
+        }
+
+    db = await get_auth_db()
+    try:
+        return await _generate_summary_for_user(user_id, db)
+    finally:
+        await db.close()
+
+
+async def _generate_summary_for_user(user_id: str, db) -> dict[str, Any]:
+    """Internal helper: gather data and generate summary."""
+    from datetime import datetime, timezone, timedelta
+
+    # Gather user events from last 7 days
+    events: list[dict[str, Any]] = []
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM user_events WHERE user_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 50",
+            (user_id, (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()),
+        )
+        rows = await cursor.fetchall()
+        events = [dict(r) for r in rows]
+    except Exception:
+        pass  # Table might not have data
+
+    # Gather portfolio entries
+    portfolio_entries: list[dict[str, Any]] = []
+    if _portfolio_logger is not None:
+        try:
+            entries = await _portfolio_logger.get_entries(user_id, limit=30)
+            portfolio_entries = [e.model_dump(mode="json") for e in entries]
+        except Exception:
+            pass
+
+    # Get learner state
+    learner_state_dict: dict[str, Any] | None = None
+    if _memory_store is not None:
+        try:
+            ls = await _memory_store.get_learner_state(user_id)
+            if ls is not None:
+                learner_state_dict = ls.model_dump(mode="json")
+        except Exception:
+            pass
+
+    return await generate_weekly_summary(
+        db, user_id, events, portfolio_entries, learner_state_dict,
+    )

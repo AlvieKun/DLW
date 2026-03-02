@@ -14,6 +14,7 @@ import type {
   UserEvent,
   UserUpload,
   AgentStatusResponse,
+  WeeklySummary,
 } from "./types";
 
 // ─── Config ───
@@ -280,4 +281,16 @@ export async function getUserUploads() {
 
 export async function getAgentsStatus() {
   return apiFetch<AgentStatusResponse>("/api/v1/system/agents/status");
+}
+
+// ─── Weekly Summary API ───
+
+export async function getWeeklySummary() {
+  return apiFetch<WeeklySummary>("/api/v1/summary/weekly");
+}
+
+export async function regenerateWeeklySummary() {
+  return apiFetch<WeeklySummary>("/api/v1/summary/weekly/generate", {
+    method: "POST",
+  });
 }

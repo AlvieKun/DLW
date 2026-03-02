@@ -257,3 +257,22 @@ export interface AgentStatusResponse {
   implemented_agents: number;
   summary: AgentSystemSummary;
 }
+
+// ─── Weekly Summary Types ───
+
+export interface WeeklySummary {
+  id?: string;
+  user_id?: string;
+  week_start?: string;
+  week_end?: string;
+  summary_text: string;
+  highlights: string[];
+  focus_items: string[];
+  burnout_flag: boolean;
+  evidence_bullets: string[];
+  model_used?: string;
+  status: "generated" | "unavailable" | "error";
+  disclaimer?: string;
+  message?: string;
+  created_at?: string;
+}

@@ -41,9 +41,12 @@ import {
   getMyState,
   getAgentsStatus,
   postEvent,
+  getWeeklySummary,
+  regenerateWeeklySummary,
   type LearnerState,
   type NextBestAction,
   type AgentStatus,
+  type WeeklySummary,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { SAMPLE_AGENT_ACTIVITY, SAMPLE_CONCEPTS } from "@/lib/sample-data";
@@ -120,6 +123,8 @@ export default function HomePage() {
   const [useSample, setUseSample] = useState(false);
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [pipelineRanAgents, setPipelineRanAgents] = useState<string[]>([]);
+  const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -151,6 +156,11 @@ export default function HomePage() {
       setUseSample(true);
     }
     setLoading(false);
+
+    // Fetch weekly summary (non-blocking)
+    getWeeklySummary().then((res) => {
+      if (res.data) setWeeklySummary(res.data);
+    });
   }, []);
 
   useEffect(() => {
@@ -317,6 +327,21 @@ export default function HomePage() {
           }
         />
         <AITeamGrid agents={agents} />
+      </div>
+
+      {/* Weekly AI Summary */}
+      <div>
+        <SectionHeader title="Weekly Summary" subtitle="AI-powered reflection on your progress" />
+        <WeeklySummaryCard
+          summary={weeklySummary}
+          loading={summaryLoading}
+          onRegenerate={async () => {
+            setSummaryLoading(true);
+            const res = await regenerateWeeklySummary();
+            if (res.data) setWeeklySummary(res.data);
+            setSummaryLoading(false);
+          }}
+        />
       </div>
 
       {/* Your Strengths & Gaps */}
@@ -871,6 +896,167 @@ function ConceptGrid({
         </Card>
       ))}
     </div>
+  );
+}
+
+// ── Weekly Summary Card ───────────────────────────────────────────
+function WeeklySummaryCard({
+  summary,
+  loading,
+  onRegenerate,
+}: {
+  summary: WeeklySummary | null;
+  loading: boolean;
+  onRegenerate: () => void;
+}) {
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
+
+  if (loading) return <CardSkeleton />;
+
+  // Not configured state
+  if (!summary || summary.status === "unavailable") {
+    return (
+      <Card className="space-y-3">
+        <div className="flex items-center gap-2 text-[var(--muted-foreground)]">
+          <Brain className="w-5 h-5" />
+          <p className="text-sm font-medium">Azure AI not configured</p>
+        </div>
+        <p className="text-xs text-[var(--muted-foreground)] leading-relaxed">
+          {summary?.message || "Weekly AI summary requires Azure OpenAI configuration."}
+        </p>
+      </Card>
+    );
+  }
+
+  // Error state
+  if (summary.status === "error") {
+    return (
+      <Card className="space-y-3">
+        <div className="flex items-center gap-2 text-amber-400">
+          <AlertTriangle className="w-5 h-5" />
+          <p className="text-sm font-medium">Summary unavailable</p>
+        </div>
+        <p className="text-xs text-[var(--muted-foreground)]">{summary.message || "Unable to generate summary at this time."}</p>
+        <button
+          onClick={onRegenerate}
+          className="text-xs text-[var(--primary)] hover:opacity-80"
+        >
+          Try again
+        </button>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-[var(--primary)]" />
+          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+            {summary.week_start} — {summary.week_end}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onRegenerate}
+            className="text-[10px] text-[var(--primary)] hover:opacity-80 font-medium"
+          >
+            Regenerate
+          </button>
+          <button
+            onClick={() => setDismissed(true)}
+            className="text-[10px] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+
+      {/* Summary text */}
+      <p className="text-sm text-[var(--foreground)] leading-relaxed whitespace-pre-line">
+        {summary.summary_text}
+      </p>
+
+      {/* Highlights */}
+      {summary.highlights.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400 mb-1">Strengths</p>
+          <ul className="space-y-1">
+            {summary.highlights.map((h, i) => (
+              <li key={i} className="text-xs text-[var(--muted-foreground)] flex items-start gap-1.5">
+                <span className="text-emerald-400 mt-0.5">✓</span>
+                {h}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Focus items */}
+      {summary.focus_items.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400 mb-1">Focus this week</p>
+          <ul className="space-y-1">
+            {summary.focus_items.map((f, i) => (
+              <li key={i} className="text-xs text-[var(--muted-foreground)] flex items-start gap-1.5">
+                <span className="text-amber-400 mt-0.5">→</span>
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Burnout warning */}
+      {summary.burnout_flag && (
+        <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-300 leading-relaxed">
+            Your activity this week suggests you may be pushing hard. Remember to take breaks — sustainable learning is effective learning.
+          </p>
+        </div>
+      )}
+
+      {/* Evidence bullets */}
+      {summary.evidence_bullets.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Based on your data</p>
+          <ul className="space-y-0.5">
+            {summary.evidence_bullets.map((b, i) => (
+              <li key={i} className="text-[11px] text-[var(--muted-foreground)]">• {b}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Disclaimer / "How this is generated" */}
+      <div className="border-t border-[var(--border)] pt-2">
+        <button
+          onClick={() => setShowDisclaimer(!showDisclaimer)}
+          className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+        >
+          <Info className="w-3 h-3" />
+          How this is generated
+          {showDisclaimer ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        </button>
+        <AnimatePresence>
+          {showDisclaimer && (
+            <motion.p
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="text-[10px] text-[var(--muted-foreground)] leading-relaxed mt-1.5 overflow-hidden"
+            >
+              {summary.disclaimer || "This summary was generated by AI based on your recorded learning data. It may not capture everything and should be used as a reflection aid, not a definitive assessment."}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </div>
+    </Card>
   );
 }
 
