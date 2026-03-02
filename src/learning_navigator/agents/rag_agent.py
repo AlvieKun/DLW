@@ -19,6 +19,11 @@ contextual queries that incorporate:
 This ensures retrieved content matches *where the learner is*, not just
 *what the topic is*.
 
+**Hybrid mode** (Phase 3): When an Azure OpenAI client is configured, the
+agent synthesises an LLM-generated summary from the top citations, providing
+the learner with a digestible explanation grounded in real passages.  When not
+configured, raw citations are returned as before — no degradation.
+
 Grounding contract
 ──────────────────
 Each citation is returned as a dict with:
@@ -145,10 +150,28 @@ class RAGAgent(BaseAgent):
 
         confidence = min(0.9, 0.3 + 0.1 * len(deduped)) if deduped else 0.2
 
+        # ── Hybrid LLM synthesis ──────────────────────────────────
+        llm_summary: str | None = None
+        llm_enhanced = False
+        try:
+            from learning_navigator.llm import get_llm_client
+
+            llm = get_llm_client()
+            if llm.enabled and deduped:
+                llm_summary = await self._llm_synthesize(state, deduped)
+                if llm_summary:
+                    llm_enhanced = True
+                    confidence = min(0.95, confidence + 0.1)
+                    log.info("rag.llm_synthesis_complete")
+        except Exception as exc:
+            log.warning("rag.llm_fallback", error=str(exc))
+        # ──────────────────────────────────────────────────────────
+
         log.info(
             "rag.complete",
             citations=len(deduped),
             queries=len(queries_executed),
+            llm_enhanced=llm_enhanced,
         )
 
         return AgentResponse(
@@ -159,10 +182,13 @@ class RAGAgent(BaseAgent):
                 "citation_count": len(deduped),
                 "queries": queries_executed,
                 "query_count": len(queries_executed),
+                "llm_summary": llm_summary,
+                "llm_enhanced": llm_enhanced,
             },
             rationale=(
                 f"Retrieved {len(deduped)} grounded citations "
                 f"from {len(queries_executed)} learner-aware queries."
+                + (" LLM synthesis applied." if llm_enhanced else "")
             ),
         )
 
@@ -233,3 +259,67 @@ class RAGAgent(BaseAgent):
             if doc_id not in best or c["score"] > best[doc_id]["score"]:
                 best[doc_id] = c
         return list(best.values())
+
+    # ── LLM hybrid synthesis ───────────────────────────────────────
+
+    @staticmethod
+    async def _llm_synthesize(
+        state: LearnerState,
+        citations: list[dict[str, Any]],
+    ) -> str | None:
+        """Use Azure OpenAI to synthesise a concise explanation from citations.
+
+        Returns a learner-friendly summary, or None if the LLM call failed
+        (caller falls back to raw citations).
+        """
+        from learning_navigator.llm import get_llm_client
+
+        llm = get_llm_client()
+        if not llm.enabled:
+            return None
+
+        # Build citation context for the LLM
+        citation_texts = []
+        for i, c in enumerate(citations[:8], 1):  # cap at 8 to stay within token limits
+            concept = c.get("concept_id", "unknown")
+            content = c.get("content", "")[:500]
+            score = c.get("score", 0.0)
+            citation_texts.append(
+                f"[{i}] Concept: {concept} (relevance: {score:.2f})\n{content}"
+            )
+
+        if not citation_texts:
+            return None
+
+        system_prompt = (
+            "You are a learning assistant. Given retrieved study material passages, "
+            "synthesise a concise, helpful summary for the learner. "
+            "Address them directly using 'you'. "
+            "Reference the source passages by number [1], [2], etc. "
+            "Focus on what's most relevant to their current level and goals. "
+            "Keep it under 200 words. Return ONLY the summary."
+        )
+
+        avg_mastery = state.average_mastery()
+        level = (
+            "beginner" if avg_mastery < 0.3
+            else "intermediate" if avg_mastery < 0.7
+            else "advanced"
+        )
+
+        user_prompt = (
+            f"Learner level: {level} (avg mastery {avg_mastery:.0%})\n\n"
+            f"Retrieved passages:\n\n"
+            + "\n\n".join(citation_texts)
+        )
+
+        result = await llm.chat(
+            user_prompt,
+            system=system_prompt,
+            temperature=0.4,
+            max_tokens=500,
+        )
+
+        if result and result.content.strip():
+            return result.content.strip()
+        return None

@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     max_debate_rounds: int = 2
     confidence_threshold: float = 0.6
 
+    # ── Azure OpenAI / LLM ────────────────────────────────────────────
+    azure_openai_endpoint: str = ""
+    azure_openai_api_key: str = ""
+    azure_openai_deployment: str = ""
+    azure_openai_api_version: str = "2024-12-01-preview"
+    llm_temperature: float = 0.4
+    llm_max_tokens: int = 1024
+
     # ── Cost-aware routing ─────────────────────────────────────────────
     cost_budget_per_turn: float = Field(
         default=10.0,

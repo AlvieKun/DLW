@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from learning_navigator.api.auth import create_access_token, COOKIE_NAME
 from learning_navigator.contracts.events import LearnerEventType
 from learning_navigator.contracts.learner_state import (
     BKTParams,
@@ -208,6 +209,12 @@ def _reset_server_globals() -> None:
     srv._settings = None
 
 
+def _auth_cookies(user_id: str = "student-1", email: str = "test@example.com") -> dict[str, str]:
+    """Create a valid JWT session cookie for test requests."""
+    token = create_access_token(user_id, email)
+    return {COOKIE_NAME: token}
+
+
 class TestFastAPIServer:
     """Test the REST endpoints via httpx AsyncClient + ASGITransport."""
 
@@ -234,11 +241,11 @@ class TestFastAPIServer:
                 "/api/v1/events",
                 json={
                     "event_id": "evt-1",
-                    "learner_id": "student-1",
                     "event_type": "quiz_result",
                     "concept_id": "algebra",
                     "data": {"score": 0.85},
                 },
+                cookies=_auth_cookies("student-1"),
             )
         assert resp.status_code == 200
         body = resp.json()
@@ -252,7 +259,10 @@ class TestFastAPIServer:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/v1/learners/nonexistent/state")
+            resp = await client.get(
+                "/api/v1/learners/nonexistent/state",
+                cookies=_auth_cookies("nonexistent"),
+            )
         assert resp.status_code == 200
         body = resp.json()
         assert body["found"] is False
@@ -263,6 +273,7 @@ class TestFastAPIServer:
         _init_server_globals()
         from learning_navigator.api.server import app
 
+        cookies = _auth_cookies("student-2")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # First process an event to create state
@@ -270,12 +281,15 @@ class TestFastAPIServer:
                 "/api/v1/events",
                 json={
                     "event_id": "e-2",
-                    "learner_id": "student-2",
                     "event_type": "content_interaction",
                     "data": {},
                 },
+                cookies=cookies,
             )
-            resp = await client.get("/api/v1/learners/student-2/state")
+            resp = await client.get(
+                "/api/v1/learners/student-2/state",
+                cookies=cookies,
+            )
         assert resp.status_code == 200
         body = resp.json()
         assert body["learner_id"] == "student-2"
@@ -286,6 +300,7 @@ class TestFastAPIServer:
         _init_server_globals()
         from learning_navigator.api.server import app
 
+        cookies = _auth_cookies("student-del")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Create + delete
@@ -293,12 +308,15 @@ class TestFastAPIServer:
                 "/api/v1/events",
                 json={
                     "event_id": "e-del",
-                    "learner_id": "student-del",
                     "event_type": "content_interaction",
                     "data": {},
                 },
+                cookies=cookies,
             )
-            resp = await client.delete("/api/v1/learners/student-del/state")
+            resp = await client.delete(
+                "/api/v1/learners/student-del/state",
+                cookies=cookies,
+            )
         assert resp.status_code == 200
         body = resp.json()
         assert body["learner_id"] == "student-del"
@@ -310,7 +328,10 @@ class TestFastAPIServer:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/v1/learners/student-1/portfolio")
+            resp = await client.get(
+                "/api/v1/learners/student-1/portfolio",
+                cookies=_auth_cookies("student-1"),
+            )
         assert resp.status_code == 200
         body = resp.json()
         assert body["learner_id"] == "student-1"
@@ -323,7 +344,10 @@ class TestFastAPIServer:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/v1/calibration")
+            resp = await client.get(
+                "/api/v1/calibration",
+                cookies=_auth_cookies("student-1"),
+            )
         assert resp.status_code == 200
         body = resp.json()
         assert "agents" in body
@@ -335,11 +359,55 @@ class TestFastAPIServer:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/v1/learners")
+            resp = await client.get(
+                "/api/v1/learners",
+                cookies=_auth_cookies("student-1"),
+            )
         assert resp.status_code == 200
         body = resp.json()
         assert "learner_ids" in body
         assert "count" in body
+
+    @pytest.mark.asyncio()
+    async def test_forbidden_cross_user_access(self) -> None:
+        """Users cannot access another user's state."""
+        _init_server_globals()
+        from learning_navigator.api.server import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(
+                "/api/v1/learners/student-2/state",
+                cookies=_auth_cookies("student-1"),
+            )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio()
+    async def test_unauthenticated_rejected(self) -> None:
+        """Requests without auth should be rejected with 401."""
+        _init_server_globals()
+        from learning_navigator.api.server import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/v1/learners/student-1/state")
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio()
+    async def test_me_state_endpoint(self) -> None:
+        """The /me/state convenience endpoint should work."""
+        _init_server_globals()
+        from learning_navigator.api.server import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(
+                "/api/v1/me/state",
+                cookies=_auth_cookies("student-1"),
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["learner_id"] == "student-1"
 
 
 # ═══════════════════════════════════════════════════════════════════

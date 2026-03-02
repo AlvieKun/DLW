@@ -18,6 +18,10 @@ dependencies = [
     "typer>=0.9,<1",
     "structlog>=23.2,<25",
     "rich>=13.0,<14",
+    "bcrypt>=4.0,<5",
+    "PyJWT>=2.8,<3",
+    "aiosqlite>=0.19,<1",
+    "openai>=1.12,<2",
 ]
 
 [project.optional-dependencies]

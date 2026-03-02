@@ -199,6 +199,86 @@ All settings can be overridden via environment variables prefixed with `LN_`:
 
 ---
 
+## Frontend Web UI
+
+A production-ready web application built with **Next.js 15 + TypeScript + Tailwind CSS 4**, featuring user authentication, onboarding, data management, and full integration with the multi-agent backend.
+
+### Quick Start (Frontend + Backend)
+
+```bash
+# Terminal 1: Start backend
+pip install -e ".[dev]"
+learning-nav serve          # http://127.0.0.1:8000 (Swagger at /docs)
+
+# Terminal 2: Start frontend
+cd frontend
+npm install
+cp .env.example .env.local  # Edit if backend is not on :8000
+npm run dev                  # http://localhost:3000
+```
+
+### Authentication
+
+The app includes a full auth system with bcrypt password hashing, JWT tokens in HttpOnly cookies, and protected routes:
+
+- **Register** → Create account with email + password
+- **Login** → Session cookie set automatically
+- **Onboarding** → 4-step wizard (subjects, goals, schedule, confirmation)
+- **Protected routes** → All app pages require authentication; unauthenticated users redirect to `/login`
+
+### Frontend Pages
+
+| Page | URL | Auth | Description |
+|---|---|---|---|
+| Login | `/login` | Public | Email/password sign-in |
+| Register | `/register` | Public | Account creation with display name |
+| Onboarding | `/onboarding` | Auth | 4-step wizard: subjects → goals → schedule → start |
+| Dashboard | `/` | Auth | Student stats, next-best-action, agent activity, concept mastery |
+| Session | `/session` | Auth | Log learning events, run AI analysis, view results timeline |
+| Plan & Forecast | `/plan` | Auth | Kanban study plan, counterfactual simulation charts |
+| Portfolio | `/portfolio` | Auth | Learning portfolio with search/filter + local entries |
+| My Data | `/my-data` | Auth | Log events, upload files (CSV/JSON/PDF), manage learning data |
+| Settings | `/settings` | Auth | Account info, learning profile, security details |
+| Dev Tools | `/dev-tools` | Auth | Backend health, endpoint ping, agent diagnostics, request log |
+
+### Backend Auth Endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/auth/register` | POST | Create account |
+| `/auth/login` | POST | Login (sets HttpOnly cookie) |
+| `/auth/logout` | POST | Clear session |
+| `/auth/me` | GET | Current user |
+| `/profile` | GET/PUT | User learning profile |
+| `/profile/onboarding/complete` | POST | Save onboarding data |
+| `/events` | GET/POST | Learning events (per user) |
+| `/uploads` | GET/POST | File uploads (per user, max 10 MB) |
+| `/api/v1/system/agents/status` | GET | Agent diagnostics (all 16 agents) |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `NEXT_PUBLIC_API_BASE_URL` | `http://127.0.0.1:8000` | Backend API base URL |
+| `LN_JWT_SECRET` | `dev-secret-...` | JWT signing secret (change in production) |
+| `LN_AUTH_DB_PATH` | `data/users.db` | SQLite database path for user data |
+
+See [frontend/README.md](frontend/README.md) for detailed architecture notes.
+
+### Demo Walkthrough
+
+1. Start both backend and frontend (see Quick Start above)
+2. Open http://localhost:3000 → redirected to Login
+3. Click "Create one" → Register with email/password
+4. Complete the 4-step **Onboarding** wizard (subjects, goals, schedule)
+5. Land on **Dashboard** → see stats and agent activity
+6. Go to **Session** → submit a quiz result event → see AI recommendation
+7. Go to **My Data** → log events manually, upload CSV/JSON files
+8. Go to **Dev Tools** → see all 16 agents marked as "implemented", ping endpoints
+9. Go to **Settings** → view your profile and account details
+
+---
+
 ## Evaluation Harness
 
 The evaluation harness provides **scenario-driven quality assessment** of the full GPS Engine pipeline. It replays realistic learner journeys and checks output properties.
