@@ -118,6 +118,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [useSample, setUseSample] = useState(false);
+  const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [pipelineRanAgents, setPipelineRanAgents] = useState<string[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -156,18 +158,27 @@ export default function HomePage() {
   }, [fetchData]);
 
   const handleGetGuidance = async () => {
-    setLoading(true);
+    setPipelineRunning(true);
+    setPipelineRanAgents([]);
+    setError(null);
+
     const res = await postEvent({
       event_id: uuid(),
       event_type: "self_report",
       data: { message: "Check-in from home" },
     });
+
     if (res.data) {
+      // Extract ran agents from the decision trace for the activity moment
+      const ranAgents = res.data.explainability?.decision_trace?.ran_agents ?? [];
+      setPipelineRanAgents(ranAgents);
+      // Brief delay so user sees the agent chips animate in
+      await new Promise((r) => setTimeout(r, 1200));
       setNba(res.data);
     } else if (res.error) {
       setError(res.error);
     }
-    setLoading(false);
+    setPipelineRunning(false);
   };
 
   const concepts = state ? Object.values(state.concepts) : [];
@@ -200,11 +211,11 @@ export default function HomePage() {
           <div className="flex flex-col sm:flex-row gap-3 shrink-0">
             <button
               onClick={handleGetGuidance}
-              disabled={loading}
+              disabled={loading || pipelineRunning}
               className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 shadow-lg shadow-[var(--primary)]/20"
             >
               <Zap className="w-4 h-4" />
-              Get Today&apos;s Guidance
+              {pipelineRunning ? "Analyzing…" : "Get Today\u0027s Guidance"}
             </button>
             <div className="flex gap-3">
               <Link
@@ -276,11 +287,18 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* Agent Activity Moment — shown while pipeline is running */}
+      <AnimatePresence>
+        {pipelineRunning && (
+          <AgentActivityMoment ranAgents={pipelineRanAgents} />
+        )}
+      </AnimatePresence>
+
       {/* Today's Guidance + AI Team Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <SectionHeader title="Today's Guidance" subtitle="Your AI-powered next step" />
-          <GuidanceCard nba={nba} loading={loading} useSample={useSample} />
+          <GuidanceCard nba={nba} loading={loading && !pipelineRunning} useSample={useSample} />
         </div>
         <div className="lg:col-span-3 space-y-4">
           <SectionHeader title="How your AI team helped" subtitle="Behind the scenes" />
@@ -577,6 +595,73 @@ function ExpectedImpactCard({ nba }: { nba: NextBestAction | null }) {
         </p>
       )}
     </div>
+  );
+}
+
+// ── Agent Activity Moment ─────────────────────────────────────────
+function AgentActivityMoment({ ranAgents }: { ranAgents: string[] }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10, transition: { duration: 0.3 } }}
+      className="rounded-2xl border border-[var(--primary)]/30 bg-gradient-to-r from-indigo-500/5 via-[var(--card)] to-purple-500/5 p-5"
+    >
+      <div className="flex items-center gap-3 mb-3">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+        >
+          <Sparkles className="w-5 h-5 text-[var(--primary)]" />
+        </motion.div>
+        <p className="text-sm font-semibold text-[var(--foreground)]">
+          Your AI team is updating your learning GPS…
+        </p>
+      </div>
+
+      {ranAgents.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {ranAgents.slice(0, 6).map((agentId, i) => {
+            // Convert agent_id (e.g. "diagnoser", "drift-detector") to agent_name for lookup
+            const agentName = agentId.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+            const friendly = getAgentFriendly(agentName);
+            return (
+              <motion.div
+                key={agentId}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.15, duration: 0.3 }}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium",
+                  "border border-[var(--border)] bg-[var(--card)]"
+                )}
+              >
+                <div className={cn("shrink-0", friendly.color)}>{friendly.icon}</div>
+                <span>{friendly.label}</span>
+                <motion.div
+                  animate={{ opacity: [1, 0.3, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.2 }}
+                  className="w-1.5 h-1.5 rounded-full bg-emerald-400"
+                />
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      {ranAgents.length === 0 && (
+        <div className="flex gap-2">
+          {[1, 2, 3].map((i) => (
+            <motion.div
+              key={i}
+              animate={{ opacity: [0.3, 0.7, 0.3] }}
+              transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }}
+              className="h-7 w-24 rounded-full bg-[var(--muted)]"
+            />
+          ))}
+        </div>
+      )}
+    </motion.div>
   );
 }
 
