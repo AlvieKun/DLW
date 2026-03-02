@@ -414,7 +414,10 @@ async def agents_status() -> dict[str, Any]:
     """Return implementation status for every agent in the pipeline."""
     agents = get_agents_status()
     summary = get_system_summary(agents)
+    agent_list = [a.model_dump() if hasattr(a, "model_dump") else a for a in agents]
     return {
-        "agents": [a.model_dump() if hasattr(a, "model_dump") else a for a in agents],
+        "agents": agent_list,
+        "total_agents": len(agent_list),
+        "implemented_agents": summary["implemented"],
         "summary": summary,
     }

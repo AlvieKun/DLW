@@ -37,39 +37,71 @@ import {
 import { cn, pct, formatDate, confidenceBadge } from "@/lib/utils";
 import {
   getMyState,
+  getAgentsStatus,
   postEvent,
   type LearnerState,
   type NextBestAction,
+  type AgentStatus,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { SAMPLE_AGENT_ACTIVITY, SAMPLE_CONCEPTS } from "@/lib/sample-data";
 import { v4 as uuid } from "uuid";
 
-// Map technical agent names to friendly descriptions
-const AGENT_FRIENDLY: Record<string, { label: string; description: string; icon: React.ReactNode; color: string }> = {
-  Diagnoser: { label: "Gap Finder", description: "Identifies what you need to work on", icon: <Target className="w-5 h-5" />, color: "text-rose-400" },
-  Planner: { label: "Study Planner", description: "Builds your personalized study plan", icon: <BarChart3 className="w-5 h-5" />, color: "text-indigo-400" },
-  Motivation: { label: "Motivation Coach", description: "Tracks your energy and engagement", icon: <Flame className="w-5 h-5" />, color: "text-amber-400" },
-  "Drift Detector": { label: "Focus Monitor", description: "Notices when your learning drifts", icon: <Eye className="w-5 h-5" />, color: "text-sky-400" },
-  "Decay Monitor": { label: "Memory Guard", description: "Flags topics you might forget", icon: <Brain className="w-5 h-5" />, color: "text-purple-400" },
-  "RAG Agent": { label: "Research Helper", description: "Finds relevant study materials", icon: <BookOpen className="w-5 h-5" />, color: "text-teal-400" },
-  "Debate Advocates": { label: "Strategy Team", description: "Proposes different study approaches", icon: <Users className="w-5 h-5" />, color: "text-orange-400" },
-  "Debate Arbitrator": { label: "Decision Maker", description: "Picks the best strategy for you", icon: <ShieldCheck className="w-5 h-5" />, color: "text-emerald-400" },
-  Evaluator: { label: "Progress Analyst", description: "Measures how well you're doing", icon: <BarChart3 className="w-5 h-5" />, color: "text-cyan-400" },
-  Reflection: { label: "Learning Mirror", description: "Helps you reflect on progress", icon: <MessageSquare className="w-5 h-5" />, color: "text-pink-400" },
-  "Time Optimizer": { label: "Schedule Optimizer", description: "Makes the most of your study time", icon: <Timer className="w-5 h-5" />, color: "text-lime-400" },
-  "Generative Replay": { label: "Practice Generator", description: "Creates review exercises", icon: <Repeat className="w-5 h-5" />, color: "text-violet-400" },
-  "Skill State": { label: "Knowledge Tracker", description: "Tracks what you know", icon: <Target className="w-5 h-5" />, color: "text-blue-400" },
-  Behavior: { label: "Habit Analyst", description: "Understands your study patterns", icon: <TrendingUp className="w-5 h-5" />, color: "text-fuchsia-400" },
+// Icon & color map for agent cards (keyed by agent_name from backend)
+const AGENT_ICON_MAP: Record<string, { icon: React.ReactNode; color: string }> = {
+  Diagnoser: { icon: <Target className="w-5 h-5" />, color: "text-rose-400" },
+  Planner: { icon: <BarChart3 className="w-5 h-5" />, color: "text-indigo-400" },
+  Motivation: { icon: <Flame className="w-5 h-5" />, color: "text-amber-400" },
+  "Drift Detector": { icon: <Eye className="w-5 h-5" />, color: "text-sky-400" },
+  Decay: { icon: <Brain className="w-5 h-5" />, color: "text-purple-400" },
+  "RAG Agent": { icon: <BookOpen className="w-5 h-5" />, color: "text-teal-400" },
+  "Mastery Maximizer": { icon: <Users className="w-5 h-5" />, color: "text-orange-400" },
+  "Exam Strategist": { icon: <Users className="w-5 h-5" />, color: "text-orange-300" },
+  "Burnout Minimizer": { icon: <Users className="w-5 h-5" />, color: "text-orange-500" },
+  "Debate Arbitrator": { icon: <ShieldCheck className="w-5 h-5" />, color: "text-emerald-400" },
+  Evaluator: { icon: <BarChart3 className="w-5 h-5" />, color: "text-cyan-400" },
+  Reflection: { icon: <MessageSquare className="w-5 h-5" />, color: "text-pink-400" },
+  "Time Optimizer": { icon: <Timer className="w-5 h-5" />, color: "text-lime-400" },
+  "Generative Replay": { icon: <Repeat className="w-5 h-5" />, color: "text-violet-400" },
+  "Skill State": { icon: <Target className="w-5 h-5" />, color: "text-blue-400" },
+  Behavior: { icon: <TrendingUp className="w-5 h-5" />, color: "text-fuchsia-400" },
+};
+
+const DEFAULT_AGENT_ICON = { icon: <Sparkles className="w-5 h-5" />, color: "text-[var(--primary)]" };
+
+function getAgentVisual(agentName: string) {
+  return AGENT_ICON_MAP[agentName] ?? DEFAULT_AGENT_ICON;
+}
+
+// Friendly name lookup for agent activity feed (AgentInsights)
+// This is used when only agent_name is available (e.g., from NBA responses)
+const AGENT_LABEL_MAP: Record<string, { label: string; description: string }> = {
+  Diagnoser: { label: "Gap Finder", description: "Identifies what you need to work on" },
+  Planner: { label: "Study Planner", description: "Builds your personalized study plan" },
+  Motivation: { label: "Motivation Coach", description: "Tracks your energy and engagement" },
+  "Drift Detector": { label: "Focus Monitor", description: "Notices when your learning drifts" },
+  Decay: { label: "Memory Guard", description: "Flags topics you might forget" },
+  "RAG Agent": { label: "Research Helper", description: "Finds relevant study materials" },
+  "Mastery Maximizer": { label: "Mastery Maximizer", description: "Advocates for deep understanding" },
+  "Exam Strategist": { label: "Exam Strategist", description: "Advocates for exam-ready preparation" },
+  "Burnout Minimizer": { label: "Burnout Minimizer", description: "Advocates for sustainable learning" },
+  "Debate Arbitrator": { label: "Decision Maker", description: "Picks the best strategy for you" },
+  Evaluator: { label: "Progress Analyst", description: "Measures how well you're doing" },
+  Reflection: { label: "Learning Mirror", description: "Helps you reflect on progress" },
+  "Time Optimizer": { label: "Schedule Optimizer", description: "Makes the most of your study time" },
+  "Generative Replay": { label: "Practice Generator", description: "Creates review exercises" },
+  "Skill State": { label: "Knowledge Tracker", description: "Tracks what you know" },
+  Behavior: { label: "Habit Analyst", description: "Understands your study patterns" },
 };
 
 function getAgentFriendly(name: string) {
-  return AGENT_FRIENDLY[name] || {
-    label: name,
+  const visual = getAgentVisual(name);
+  const labels = AGENT_LABEL_MAP[name] ?? {
+    // Fallback: title-case the agent name
+    label: name.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
     description: "Part of your AI team",
-    icon: <Sparkles className="w-5 h-5" />,
-    color: "text-[var(--primary)]",
   };
+  return { ...visual, ...labels };
 }
 
 export default function HomePage() {
@@ -78,6 +110,9 @@ export default function HomePage() {
 
   const [state, setState] = useState<LearnerState | null>(null);
   const [nba, setNba] = useState<NextBestAction | null>(null);
+  const [agents, setAgents] = useState<AgentStatus[]>([]);
+  const [agentCount, setAgentCount] = useState(0);
+  const [implementedCount, setImplementedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [useSample, setUseSample] = useState(false);
@@ -87,7 +122,19 @@ export default function HomePage() {
     setError(null);
     setUseSample(false);
 
-    const stateRes = await getMyState();
+    // Fetch learner state and agents status in parallel
+    const [stateRes, agentsRes] = await Promise.all([
+      getMyState(),
+      getAgentsStatus(),
+    ]);
+
+    // Handle agents status
+    if (agentsRes.data) {
+      setAgents(agentsRes.data.agents);
+      setAgentCount(agentsRes.data.total_agents);
+      setImplementedCount(agentsRes.data.implemented_agents ?? agentsRes.data.total_agents);
+    }
+
     if (stateRes.error) {
       setError(stateRes.error);
       setUseSample(true);
@@ -143,7 +190,9 @@ export default function HomePage() {
               Welcome back, {firstName}
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] max-w-lg">
-              Your AI team of {Object.keys(AGENT_FRIENDLY).length} specialized agents is ready to guide your next study session.
+              {implementedCount > 0
+                ? `Your AI team of ${implementedCount} specialized ${implementedCount === 1 ? "agent is" : "agents are"} ready to guide your next study session.`
+                : "Your AI team is ready to guide your next study session."}
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 shrink-0">
@@ -241,21 +290,13 @@ export default function HomePage() {
       <div>
         <SectionHeader
           title="Your AI Team"
-          subtitle={`${Object.keys(AGENT_FRIENDLY).length} specialized agents working for you`}
+          subtitle={
+            implementedCount > 0
+              ? `${implementedCount} specialized ${implementedCount === 1 ? "agent" : "agents"} working together to guide your learning`
+              : "Loading your AI team…"
+          }
         />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {Object.entries(AGENT_FRIENDLY).slice(0, 8).map(([key, agent]) => (
-            <Card key={key} className="flex items-start gap-3 !p-4">
-              <div className={cn("shrink-0 mt-0.5", agent.color)}>
-                {agent.icon}
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{agent.label}</p>
-                <p className="text-xs text-[var(--muted-foreground)] mt-0.5 leading-relaxed">{agent.description}</p>
-              </div>
-            </Card>
-          ))}
-        </div>
+        <AITeamGrid agents={agents} />
       </div>
 
       {/* Your Strengths & Gaps */}
@@ -559,6 +600,77 @@ function ConceptGrid({
           </div>
         </Card>
       ))}
+    </div>
+  );
+}
+
+// AI Team Grid — renders all agents from backend with dev guardrail
+function AITeamGrid({ agents }: { agents: AgentStatus[] }) {
+  const IS_DEV = process.env.NODE_ENV === "development";
+  const renderedCards = agents;
+
+  // Dev guardrail: warn if rendered cards don't match agent list
+  useEffect(() => {
+    if (IS_DEV && agents.length > 0 && renderedCards.length !== agents.length) {
+      console.warn(
+        "AI Team mismatch: backend agents vs rendered cards",
+        { backend: agents.length, rendered: renderedCards.length }
+      );
+    }
+  }, [agents, renderedCards, IS_DEV]);
+
+  // Dev guardrail: warn if implementedCount from API doesn't match implemented agents in list
+  const implementedInList = agents.filter((a) => a.status === "implemented").length;
+  useEffect(() => {
+    if (IS_DEV && agents.length > 0) {
+      const apiImplemented = agents.filter((a) => a.status === "implemented").length;
+      if (renderedCards.length !== agents.length) {
+        console.warn(
+          `[DEV] Agent count mismatch: ${renderedCards.length} cards rendered but ${agents.length} agents from backend`
+        );
+      }
+    }
+  }, [agents, renderedCards, IS_DEV]);
+
+  if (agents.length === 0) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map((i) => (
+          <CardSkeleton key={i} />
+        ))}
+      </div>
+    );
+  }
+
+  // Log dev warning for agents missing from icon map
+  if (IS_DEV) {
+    for (const agent of agents) {
+      if (!AGENT_ICON_MAP[agent.agent_name]) {
+        console.warn(
+          `AI Team: agent "${agent.agent_name}" has no icon mapping — using default icon`
+        );
+      }
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {agents.map((agent) => {
+        const visual = getAgentVisual(agent.agent_name);
+        return (
+          <Card key={agent.agent_id} className="flex items-start gap-3 !p-4">
+            <div className={cn("shrink-0 mt-0.5", visual.color)}>
+              {visual.icon}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{agent.friendly_name}</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-0.5 leading-relaxed">
+                {agent.description}
+              </p>
+            </div>
+          </Card>
+        );
+      })}
     </div>
   );
 }

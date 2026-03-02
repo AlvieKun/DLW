@@ -194,10 +194,13 @@ export interface UserUpload {
 }
 
 export interface AgentStatus {
+  agent_id: string;
   agent_name: string;
+  friendly_name: string;
+  description: string;
   module: string;
   class_name: string;
-  status: "implemented" | "partial" | "stub";
+  status: "implemented" | "partial" | "stub" | "error" | "unknown";
   evidence: string;
   file_path: string;
   method_count: number;
@@ -212,9 +215,15 @@ export interface AgentSystemSummary {
   stub: number;
   health_level: string;
   health_pct: number;
+  label: string;
+  description: string;
+  engine_type: string;
+  engine_note: string;
 }
 
 export interface AgentStatusResponse {
   agents: AgentStatus[];
+  total_agents: number;
+  implemented_agents: number;
   summary: AgentSystemSummary;
 }
