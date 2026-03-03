@@ -16,23 +16,24 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+# (agent_name, module_path, class_name, friendly_name, description)
 AGENT_MODULES = [
-    ("Diagnoser", "learning_navigator.agents.diagnoser", "DiagnoserAgent"),
-    ("Planner", "learning_navigator.agents.planner", "PlannerAgent"),
-    ("Evaluator", "learning_navigator.agents.evaluator", "EvaluatorAgent"),
-    ("Motivation", "learning_navigator.agents.motivation", "MotivationAgent"),
-    ("Drift Detector", "learning_navigator.agents.drift_detector", "DriftDetectorAgent"),
-    ("Decay", "learning_navigator.agents.decay", "DecayAgent"),
-    ("Generative Replay", "learning_navigator.agents.generative_replay", "GenerativeReplayAgent"),
-    ("Skill State", "learning_navigator.agents.skill_state", "SkillStateAgent"),
-    ("Behavior", "learning_navigator.agents.behavior", "BehaviorAgent"),
-    ("Time Optimizer", "learning_navigator.agents.time_optimizer", "TimeOptimizerAgent"),
-    ("Reflection", "learning_navigator.agents.reflection", "ReflectionAgent"),
-    ("Mastery Maximizer", "learning_navigator.agents.debate_advocates", "MasteryMaximizer"),
-    ("Exam Strategist", "learning_navigator.agents.debate_advocates", "ExamStrategist"),
-    ("Burnout Minimizer", "learning_navigator.agents.debate_advocates", "BurnoutMinimizer"),
-    ("Debate Arbitrator", "learning_navigator.agents.debate_arbitrator", "DebateArbitrator"),
-    ("RAG Agent", "learning_navigator.agents.rag_agent", "RAGAgent"),
+    ("Diagnoser", "learning_navigator.agents.diagnoser", "DiagnoserAgent", "Gap Finder", "Identifies what you need to work on"),
+    ("Planner", "learning_navigator.agents.planner", "PlannerAgent", "Study Planner", "Builds your personalized study plan"),
+    ("Evaluator", "learning_navigator.agents.evaluator", "EvaluatorAgent", "Progress Analyst", "Measures how well you're doing"),
+    ("Motivation", "learning_navigator.agents.motivation", "MotivationAgent", "Motivation Coach", "Tracks your energy and engagement"),
+    ("Drift Detector", "learning_navigator.agents.drift_detector", "DriftDetectorAgent", "Focus Monitor", "Notices when your learning drifts"),
+    ("Decay", "learning_navigator.agents.decay", "DecayAgent", "Memory Guard", "Flags topics you might forget"),
+    ("Generative Replay", "learning_navigator.agents.generative_replay", "GenerativeReplayAgent", "Practice Generator", "Creates review exercises"),
+    ("Skill State", "learning_navigator.agents.skill_state", "SkillStateAgent", "Knowledge Tracker", "Tracks what you know"),
+    ("Behavior", "learning_navigator.agents.behavior", "BehaviorAgent", "Habit Analyst", "Understands your study patterns"),
+    ("Time Optimizer", "learning_navigator.agents.time_optimizer", "TimeOptimizerAgent", "Schedule Optimizer", "Makes the most of your study time"),
+    ("Reflection", "learning_navigator.agents.reflection", "ReflectionAgent", "Learning Mirror", "Helps you reflect on progress"),
+    ("Mastery Maximizer", "learning_navigator.agents.debate_advocates", "MasteryMaximizer", "Mastery Maximizer", "Advocates for deep understanding"),
+    ("Exam Strategist", "learning_navigator.agents.debate_advocates", "ExamStrategist", "Exam Strategist", "Advocates for exam-ready preparation"),
+    ("Burnout Minimizer", "learning_navigator.agents.debate_advocates", "BurnoutMinimizer", "Burnout Minimizer", "Advocates for sustainable learning"),
+    ("Debate Arbitrator", "learning_navigator.agents.debate_arbitrator", "DebateArbitrator", "Decision Maker", "Picks the best strategy for you"),
+    ("RAG Agent", "learning_navigator.agents.rag_agent", "RAGAgent", "Research Helper", "Finds relevant study materials"),
 ]
 
 STUB_MARKERS = ["TODO", "NotImplementedError", "raise NotImplemented", "STUB", "PLACEHOLDER"]
@@ -97,9 +98,13 @@ def get_agents_status() -> list[dict[str, Any]]:
     """Scan all agent modules and return implementation status."""
     results = []
     
-    for name, module_path, class_name in AGENT_MODULES:
+    for name, module_path, class_name, friendly_name, description in AGENT_MODULES:
+        agent_id = name.lower().replace(" ", "_")
         entry: dict[str, Any] = {
+            "agent_id": agent_id,
             "agent_name": name,
+            "friendly_name": friendly_name,
+            "description": description,
             "module": module_path,
             "class_name": class_name,
             "status": "unknown",
@@ -164,6 +169,7 @@ def get_system_summary(agents: list[dict[str, Any]]) -> dict[str, Any]:
     implemented = sum(1 for a in agents if a["status"] == "implemented")
     partial = sum(1 for a in agents if a["status"] == "partial")
     stubs = sum(1 for a in agents if a["status"] in ("stub", "error", "unknown"))
+    health_pct = round((implemented + partial * 0.5) / total * 100, 1) if total else 0
     
     if implemented == total:
         level = "fully_active"
@@ -183,13 +189,14 @@ def get_system_summary(agents: list[dict[str, Any]]) -> dict[str, Any]:
         description = "Most agents are stubs or placeholders."
     
     return {
-        "level": level,
-        "label": label,
-        "description": description,
-        "total_agents": total,
+        "total": total,
         "implemented": implemented,
         "partial": partial,
-        "stubs": stubs,
+        "stub": stubs,
+        "health_level": level,
+        "health_pct": health_pct,
+        "label": label,
+        "description": description,
         "engine_type": "rule_based",
         "engine_note": "All agents use deterministic algorithms (BKT, Ebbinghaus decay, weighted scoring). No LLM calls.",
     }

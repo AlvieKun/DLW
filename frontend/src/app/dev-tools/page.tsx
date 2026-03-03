@@ -264,7 +264,7 @@ export default function DevToolsPage() {
       <div>
         <SectionHeader
           title="Agent Diagnostics"
-          subtitle="Implementation status of all 16 pipeline agents"
+          subtitle={agentSummary ? `Implementation status of all ${agentSummary.total} pipeline agents` : "Implementation status of pipeline agents"}
           action={
             <button
               onClick={loadAgents}
