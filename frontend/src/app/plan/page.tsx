@@ -21,6 +21,7 @@ import {
   Info,
   Target,
   BookOpen,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -51,6 +52,7 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [useSample, setUseSample] = useState(false);
+  const [isNewUser, setIsNewUser] = useState(false);
   const [viewTab, setViewTab] = useState("Kanban");
   const [simTab, setSimTab] = useState("Score");
 
@@ -61,11 +63,14 @@ export default function PlanPage() {
     if (res.error) {
       setError(res.error);
       setUseSample(true);
+      setIsNewUser(false);
     } else if (res.data?.found && res.data.state) {
       setState(res.data.state);
       setUseSample(false);
+      setIsNewUser(false);
     } else {
       setUseSample(true);
+      setIsNewUser(true);
     }
     setLoading(false);
   }, []);
@@ -85,8 +90,17 @@ export default function PlanPage() {
         </p>
       </div>
 
-      {error && <ErrorBanner message={error} onRetry={fetchData} />}
-      {useSample && !loading && <SampleDataBanner />}
+      {error && !isNewUser && <ErrorBanner message={error} onRetry={fetchData} />}
+      {useSample && !loading && !isNewUser && <SampleDataBanner />}
+      {isNewUser && !loading && (
+        <div className="flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-xs text-indigo-400">
+          <Sparkles className="w-4 h-4 shrink-0" />
+          <span className="font-medium">Welcome!</span>
+          <span className="text-indigo-400/70">
+            Log a study session or get guidance from the home page to start building your personalized plan.
+          </span>
+        </div>
+      )}
 
       {/* Study Plan */}
       <div>
