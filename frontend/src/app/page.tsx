@@ -121,6 +121,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [useSample, setUseSample] = useState(false);
+  const [isNewUser, setIsNewUser] = useState(false);
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [pipelineRanAgents, setPipelineRanAgents] = useState<string[]>([]);
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
@@ -145,15 +146,21 @@ export default function HomePage() {
     }
 
     if (stateRes.error) {
+      // Auth error — show sample data with "connect backend" banner
       setError(stateRes.error);
       setUseSample(true);
+      setIsNewUser(false);
       setLoading(false);
       return;
     }
     if (stateRes.data?.found && stateRes.data.state) {
       setState(stateRes.data.state);
+      setUseSample(false);
+      setIsNewUser(false);
     } else {
+      // Authenticated but no state yet — new user, show sample previews
       setUseSample(true);
+      setIsNewUser(true);
     }
     setLoading(false);
 
@@ -247,8 +254,17 @@ export default function HomePage() {
         </div>
       </div>
 
-      {error && <ErrorBanner message={error} onRetry={fetchData} />}
-      {useSample && !loading && <SampleDataBanner />}
+      {error && !isNewUser && <ErrorBanner message={error} onRetry={fetchData} />}
+      {useSample && !loading && !isNewUser && <SampleDataBanner />}
+      {isNewUser && !loading && (
+        <div className="flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-xs text-indigo-400">
+          <Sparkles className="w-4 h-4 shrink-0" />
+          <span className="font-medium">Welcome!</span>
+          <span className="text-indigo-400/70">
+            You&apos;re connected. Click &ldquo;Get Today&apos;s Guidance&rdquo; or log a study session to start building your learning profile.
+          </span>
+        </div>
+      )}
 
       {/* Stats Row */}
       {loading ? (
